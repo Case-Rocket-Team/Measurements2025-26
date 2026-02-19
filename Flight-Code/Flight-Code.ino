@@ -61,19 +61,20 @@ enum class ads_reg : u8 {
 
 struct sample {
   u32 time;
-  i32 measures[NUM_STRAIN_GAUGES];
+  i16 measures[NUM_STRAIN_GAUGES];
 };
 
+// Used to swap the front and back buffers
+sample* tmp_buf = NULL;
 sample* data_front_buf = NULL;
 sample* data_back_buf = NULL;
-sample* tmp_buf = NULL;
 
 const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 #define ADS_PGA 0b001
 #define ADS_GAIN (1 << ADS_PGA)
 
-const float ads_conversion = (1.0f / ADS_GAIN) * 2.5f / 4194304.0f;
+const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
 /*
  /$$$$$$$$ /$$                       /$$            /$$$$$$                               
@@ -99,10 +100,10 @@ enum class mes_types : u8 {
 
 #define FLASH_CS 17
 
-#define SWITCH_PIN 5
+#define SWITCH_PIN 25
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "02-07-26-testing"
+#define CUR_FILE_NAME "02-19-26-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -115,6 +116,7 @@ void write_output_header(File& out_file);
 File output_file;
 u8 pin_reads = 0xff;
 u32 num_samples = 0;
+u32 last_time = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -142,12 +144,12 @@ void setup() {
 
   Serial.printf("Creating file '%s'\n", file_name);
 
-  /*output_file = SD.open(file_name, FILE_WRITE);
+  output_file = SD.open(file_name, FILE_WRITE);
   if (!output_file) {
     Serial.println("Failed to create output file");
     while (1);
   }
-  write_output_header(output_file);*/
+  write_output_header(output_file);
 
   last_time = micros();
 }
@@ -159,16 +161,16 @@ void loop() {
     num_samples += DATA_BUF_SIZE;
     u32 write_start = micros();
 
-    /*u32 written = output_file.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
+    u32 written = output_file.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
     output_file.flush();
-    Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);*/
+    Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);
 
     u32 write_end = micros();
 
     if (digitalRead(SWITCH_PIN) == 0) {
-      /*u32 written = output_file.write((u8*)&num_samples, 4);
+      u32 written = output_file.write((u8*)&num_samples, 4);
       Serial.printf("%d written (%u expected) | ", written, 4);
-      output_file.close();*/
+      output_file.close();
 
       Serial.println("Switch is turned off, stopping now");
       while (1);
@@ -248,7 +250,7 @@ void find_file_name(char file_name[FILE_NAME_SIZE + 1]) {
 }
 
 void write_output_header(File& out_file) {
-  u8 header[4] = { 'I', 'A', 'N', 1 + NUM_STRAIN_GAUGES };
+  u8 header[4] = { 'M', 'E', 'S', 1 + NUM_STRAIN_GAUGES };
   out_file.write(header, 4);
 
   char gauge_name[] = { 'g', 'a', 'u', 'g', 'e', '0', '0' };
@@ -267,7 +269,7 @@ void write_output_header(File& out_file) {
 
   for (u32 i = 0; i < NUM_STRAIN_GAUGES; i++) {
     *(u16*)(field_header) = 1;
-    field_header[2] = (u8)mes_types::I32;
+    field_header[2] = (u8)mes_types::I16;
     field_header[3] = sizeof(gauge_name);
 
     if (i < 10) {
@@ -365,7 +367,6 @@ void setup1() {
   delay(200);
 }
 
-u8 ads_bytes[3] = { 0 };
 u32 cur_pin = 0;
 u32 data_buf_pos = 0;
 u32 prev_time = 0;
@@ -384,21 +385,23 @@ void loop1() {
   SPI1.transfer(0x00);
   SPI1.transfer((cur_pin << 4) | 0b1000);
   SPI1.transfer((u8)ads_cmd::SYNC);
-  // Rounded down from 3.125
-  delayMicroseconds(3);
+  // Rounded up from 3.125
+  delayMicroseconds(4);
   SPI1.transfer((u8)ads_cmd::WAKEUP);
   SPI1.transfer((u8)ads_cmd::RDATA);
   // Rounded up from 6.510
   delayMicroseconds(7);
 
-  ads_bytes[0] = SPI1.transfer(0);
+  i16 sample = 0;
+
+  sample |= (i16)SPI1.transfer(0) << 8;
+  sample |= (i16)SPI1.transfer(0);
+  /*ads_bytes[0] = SPI1.transfer(0);
   ads_bytes[1] = SPI1.transfer(0);
   ads_bytes[2] = SPI1.transfer(0);
 
   i32 sample = (ads_bytes[0] << 16) | (ads_bytes[1] << 8) | ads_bytes[2];
-  sample = (sample & (1 << 23) ? sample - 0x1000000 : sample);
-  //f32 voltage = (f32)sample * ads_conversion;
-  //voltages[prev_pin] = (f32)sample * ads_conversion;
+  sample = (sample & (1 << 23) ? sample - 0x1000000 : sample);*/
 
   digitalWrite(ADS_CS_PIN, HIGH);
   SPI1.endTransaction();

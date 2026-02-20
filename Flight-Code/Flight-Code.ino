@@ -2,6 +2,8 @@
 #include <SPI.h>
 #include <SD.h>
 
+#define WRITE_FILE 0
+
 typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
@@ -16,12 +18,14 @@ typedef struct {
   u32 size;
 } string8;
 
-#define CIPO_PIN 28
-#define COPI_PIN 27
-#define SCK_PIN 26
+#define SPI1_CIPO_PIN 28
+#define SPI1_COPI_PIN 27
+#define SPI1_SCK_PIN 26
 
-#define ADS_CS_PIN 21
-#define ADS_DRDY_PIN 19
+#define ADS0_CS_PIN 21
+#define ADS1_CS_PIN 5
+#define ADS0_DRDY_PIN 19
+#define ADS1_DRDY_PIN 20
 
 enum class ads_cmd : u8 { 
   WAKEUP   = 0x00,
@@ -55,6 +59,14 @@ enum class ads_reg : u8 {
   FSC2   = 0xa,
 };
 
+//const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
+const SPISettings ads_settings(1000000, MSBFIRST, SPI_MODE1);
+
+#define ADS_PGA 0b001
+#define ADS_GAIN (1 << ADS_PGA)
+
+const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
+
 #define DATA_BUF_SIZE 1024
 
 #define NUM_STRAIN_GAUGES 2
@@ -68,13 +80,6 @@ struct sample {
 sample* tmp_buf = NULL;
 sample* data_front_buf = NULL;
 sample* data_back_buf = NULL;
-
-const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
-
-#define ADS_PGA 0b001
-#define ADS_GAIN (1 << ADS_PGA)
-
-const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
 /*
  /$$$$$$$$ /$$                       /$$            /$$$$$$                               
@@ -96,7 +101,6 @@ enum class mes_types : u8 {
   U32 = 5,
   F32 = 6
 };
-
 
 #define FLASH_CS 17
 
@@ -139,6 +143,7 @@ void setup() {
   }
   Serial.println("SD initialization done.");
 
+#if WRITE_FILE
   char file_name[FILE_NAME_SIZE + 1] = { 0 };
   find_file_name(file_name);
 
@@ -150,6 +155,7 @@ void setup() {
     while (1);
   }
   write_output_header(output_file);
+#endif
 
   last_time = micros();
 }
@@ -161,16 +167,20 @@ void loop() {
     num_samples += DATA_BUF_SIZE;
     u32 write_start = micros();
 
+#if WRITE_FILE
     u32 written = output_file.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
     output_file.flush();
     Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);
+#endif
 
     u32 write_end = micros();
 
     if (digitalRead(SWITCH_PIN) == 0) {
+#if WRITE_FILE
       u32 written = output_file.write((u8*)&num_samples, 4);
       Serial.printf("%d written (%u expected) | ", written, 4);
       output_file.close();
+#endif
 
       Serial.println("Switch is turned off, stopping now");
       while (1);
@@ -298,73 +308,38 @@ void write_output_header(File& out_file) {
  \______/  \_______/ \_______/ \______/ |__/  |__/ \_______/       \______/  \______/ |__/       \_______/
 */
 
-static u8 ads_read_reg(ads_reg reg);
-static void ads_write_reg(ads_reg reg, u8 val);
-static void ads_send_cmd(ads_cmd cmd);
+// Sets up datarate, multiplexer, gain, etc.
+static void ads_init(u8 ads_cs_pin);
+
+static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg);
+static void ads_write_reg(u8 ads_cs_pin, ads_reg reg, u8 val);
+static void ads_send_cmd(u8 ads_cs_pin, ads_cmd cmd);
 
 void setup1() {
-  //Serial.begin(115200);
-  //while (!Serial);
-
   data_front_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
   data_back_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
   memset(data_front_buf, 0, sizeof(sample) * DATA_BUF_SIZE);
   memset(data_back_buf, 0, sizeof(sample) * DATA_BUF_SIZE);
 
-  pinMode(CIPO_PIN, INPUT);
-  pinMode(COPI_PIN, OUTPUT);
-  pinMode(SCK_PIN, OUTPUT);
+  pinMode(SPI1_CIPO_PIN, INPUT);
+  pinMode(SPI1_COPI_PIN, OUTPUT);
+  pinMode(SPI1_SCK_PIN, OUTPUT);
 
-  SPI1.setMISO(CIPO_PIN);
-  SPI1.setMOSI(COPI_PIN);
-  SPI1.setSCK(SCK_PIN);
+  SPI1.setMISO(SPI1_CIPO_PIN);
+  SPI1.setMOSI(SPI1_COPI_PIN);
+  SPI1.setSCK(SPI1_SCK_PIN);
 
-  pinMode(ADS_CS_PIN, OUTPUT);
-  pinMode(ADS_DRDY_PIN, INPUT);
+  pinMode(ADS0_CS_PIN, OUTPUT);
+  pinMode(ADS0_DRDY_PIN, INPUT);
+  pinMode(ADS1_CS_PIN, OUTPUT);
+  pinMode(ADS1_DRDY_PIN, INPUT);
 
-  digitalWrite(ADS_CS_PIN, HIGH);
+  digitalWrite(ADS0_CS_PIN, HIGH);
+  digitalWrite(ADS1_CS_PIN, HIGH);
 
   SPI1.begin();
 
-  ads_send_cmd(ads_cmd::RESET);
-  delay(100);
-
-  ads_write_reg(ads_reg::MUX, 0b00001000);
-  delay(100);
-
-  ads_write_reg(ads_reg::ADCON, 0b00100001);
-  delay(100);
-
-  u8 status = ads_read_reg(ads_reg::STATUS);
-  Serial.print("ADS Status:\n\tID - ");
-  for (u32 i = 7; i >= 4; i--) {
-    Serial.write((status >> i) & 1 ? '1' : '0');
-  }
-  Serial.print("\n\tORDER - ");
-  Serial.print(status & 0b1000 ? "LSB" : "MSB");
-  Serial.print("\n\tACAL - ");
-  Serial.print(status & 0b100 ? "EN" : "DIS");
-  Serial.print("\n\tBUFEN - ");
-  Serial.print(status & 0b10 ? "EN" : "DIS");
-  Serial.print("\n\tDRDY - ");
-  Serial.println(status & 0b1);
-
-  u8 ad_con = ads_read_reg(ads_reg::ADCON);
-  Serial.print("ADS ADCON: ");
-  for (i32 i = 7; i >= 0; i--) {
-    Serial.write((ad_con >> i) & 1 ? '1' : '0');
-  }
-  Serial.println("");
-
-  u8 drate = ads_read_reg(ads_reg::DRATE);
-  Serial.print("DRATE: ");
-  for (i32 i = 7; i >= 0; i--) {
-    Serial.write((drate >> i) & 1 ? '1' : '0');
-  }
-  Serial.println("");
-
-  ads_send_cmd(ads_cmd::SELFCAL);
-  delay(200);
+  ads_init(ADS1_CS_PIN);
 }
 
 u32 cur_pin = 0;
@@ -376,10 +351,10 @@ void loop1() {
   cur_pin = (cur_pin + 1) % NUM_STRAIN_GAUGES;
 
   // Wait for DRDY  
-  while (digitalRead(ADS_DRDY_PIN) == HIGH);
+  while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
   SPI1.beginTransaction(ads_settings);
-  digitalWrite(ADS_CS_PIN, LOW);
+  digitalWrite(ADS1_CS_PIN, LOW);
 
   SPI1.transfer((u8)ads_cmd::WREG | (u8)ads_reg::MUX);
   SPI1.transfer(0x00);
@@ -396,29 +371,10 @@ void loop1() {
 
   sample |= (i16)SPI1.transfer(0) << 8;
   sample |= (i16)SPI1.transfer(0);
-  /*ads_bytes[0] = SPI1.transfer(0);
-  ads_bytes[1] = SPI1.transfer(0);
-  ads_bytes[2] = SPI1.transfer(0);
+  (void)SPI1.transfer(0);
 
-  i32 sample = (ads_bytes[0] << 16) | (ads_bytes[1] << 8) | ads_bytes[2];
-  sample = (sample & (1 << 23) ? sample - 0x1000000 : sample);*/
-
-  digitalWrite(ADS_CS_PIN, HIGH);
+  digitalWrite(ADS1_CS_PIN, HIGH);
   SPI1.endTransaction();
-
-  //delay(1);
-
-  /*if (cur_pin == 0) {
-    Serial.print("time:");
-    Serial.print(micros());
-  }
-  Serial.print(", Guage");
-  Serial.print(prev_pin);
-  Serial.print(":");
-  Serial.print((f32)sample * ads_conversion);
-  if (cur_pin == NUM_STRAIN_GAUGES - 1) {
-    Serial.println("");
-  }*/
 
   if (prev_pin == 0) {
     data_back_buf[data_buf_pos++] = { 0 };
@@ -427,7 +383,7 @@ void loop1() {
   data_back_buf[data_buf_pos-1].measures[prev_pin] = sample;
 
   if (data_buf_pos >= DATA_BUF_SIZE) {
-    tmp_buf  = data_front_buf;
+    tmp_buf = data_front_buf;
     data_front_buf = data_back_buf;
     data_back_buf = tmp_buf;
 
@@ -437,10 +393,21 @@ void loop1() {
   }
 }
 
-static u8 ads_read_reg(ads_reg reg) {
+static void ads_init(u8 ads_cs_pin) {
+  ads_send_cmd(ads_cs_pin, ads_cmd::RESET);
+  delay(100);
+  ads_write_reg(ads_cs_pin, ads_reg::MUX, 0b00001000);
+  delay(100);
+  ads_write_reg(ads_cs_pin, ads_reg::ADCON, 0b00100000 | ADS_PGA);
+  delay(100);
+  ads_send_cmd(ads_cs_pin, ads_cmd::SELFCAL);
+  delay(200);
+}
+
+static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg) {
   SPI1.beginTransaction(ads_settings);
 
-  digitalWrite(ADS_CS_PIN, LOW);
+  digitalWrite(ads_cs_pin, LOW);
 
   SPI1.transfer((u8)ads_cmd::RREG | (u8)reg);
   SPI1.transfer(0x00);
@@ -449,38 +416,38 @@ static u8 ads_read_reg(ads_reg reg) {
 
   u8 out = SPI1.transfer(0xff);
 
-  digitalWrite(ADS_CS_PIN, HIGH);
+  digitalWrite(ads_cs_pin, HIGH);
 
   SPI1.endTransaction();
 
   return out;
 }
 
-static void ads_write_reg(ads_reg reg, u8 val) {
+static void ads_write_reg(u8 ads_cs_pin, ads_reg reg, u8 val) {
   SPI1.beginTransaction(ads_settings);
 
-  digitalWrite(ADS_CS_PIN, LOW);
+  digitalWrite(ads_cs_pin, LOW);
 
   SPI1.transfer((u8)ads_cmd::WREG | (u8)reg);
   SPI1.transfer(0x00);
   SPI1.transfer(val);
 
-  digitalWrite(ADS_CS_PIN, HIGH);
+  digitalWrite(ads_cs_pin, HIGH);
 
   SPI1.endTransaction();
 }
 
-static void ads_send_cmd(ads_cmd cmd) {
+static void ads_send_cmd(u8 ads_cs_pin, ads_cmd cmd) {
   SPI1.beginTransaction(ads_settings);
 
-  digitalWrite(ADS_CS_PIN, LOW);
+  digitalWrite(ads_cs_pin, LOW);
 
   // TODO: Test if these delays are really necessary
   delayMicroseconds(5);
   SPI1.transfer((u8)cmd);
   delayMicroseconds(5);
 
-  digitalWrite(ADS_CS_PIN, HIGH);
+  digitalWrite(ads_cs_pin, HIGH);
 
   SPI1.endTransaction();
 }

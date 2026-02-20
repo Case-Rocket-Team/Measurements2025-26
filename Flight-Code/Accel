@@ -1,0 +1,48 @@
+#include <Arduino_LSM6DSOX.h>
+
+float Ax, Ay, Az;  //float values for accel
+typedef uint32_t u32;
+
+void setup() {  // initializing
+    Serial.begin(115200)
+
+      while (!Serial);
+
+  if (!IMU.begin()) {
+    Serial.println("Failed to initialize IMU");
+    while (1)
+      ;
+  }
+
+
+  Serial.print("Accelerometer sample rate = ");
+  Serial.print(IMU.accelerationSampleRate());
+  Serial.println("Hz");
+  Serial.println();
+}
+
+void loop() {                                                                             
+  if (IMU.accelerationAvailable()){ 
+    
+    u32 time; 
+    IMU.readAcceleration(Ax,Ay,Az);
+
+    Serial.println("Current Time:");
+    Serial.print(time);
+    Serial.println("Acceleration Data:");
+    Serial.print(Ax);
+    Serial.print('\t');
+    Serial.dprint(Ay);
+    Serial.print('\t');
+    Serial.println(Az);
+    Serial.println();
+
+  delay(500)
+}
+
+
+//to be added...
+//looping while acceleration data meets or above threshold
+//reading new available data, ending when drastic change
+
+// What are the threshold measurements for x, y, and z axis?

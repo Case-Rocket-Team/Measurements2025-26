@@ -59,22 +59,33 @@ enum class ads_reg : u8 {
   FSC2   = 0xa,
 };
 
-//const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
-const SPISettings ads_settings(1000000, MSBFIRST, SPI_MODE1);
+const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 #define ADS_PGA 0b001
 #define ADS_GAIN (1 << ADS_PGA)
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
-#define DATA_BUF_SIZE 1024
+#define DATA_BUF_SIZE 512
 
-#define NUM_STRAIN_GAUGES 2
+#define ADS0_NUM_GAUGES 2
+#define ADS1_NUM_GAUGES 2
 
+#define ADS0_CYCLES_PER_SAMPLE 1 
+#define ADS1_CYCLES_PER_SAMPLE 1 
+
+static_assert(
+  ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE ==
+  ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE
+);
+
+#pragma pack(push, 1)
 struct sample {
   u32 time;
-  i16 measures[NUM_STRAIN_GAUGES];
+  i16 measures0[ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE];
+  i16 measures1[ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE];
 };
+#pragma pack(pop)
 
 // Used to swap the front and back buffers
 sample* tmp_buf = NULL;
@@ -107,7 +118,7 @@ enum class mes_types : u8 {
 #define SWITCH_PIN 25
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "02-19-26-testing"
+#define CUR_FILE_NAME "02-21-26-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -136,6 +147,7 @@ void setup() {
     while (1);
   }
 
+#if WRITE_FILE
   Serial.println("Initializing SD card...");
   if (!SD.begin(FLASH_CS, SPI_FULL_SPEED)) {
     Serial.println("SD initialization failed!");
@@ -143,7 +155,6 @@ void setup() {
   }
   Serial.println("SD initialization done.");
 
-#if WRITE_FILE
   char file_name[FILE_NAME_SIZE + 1] = { 0 };
   find_file_name(file_name);
 
@@ -188,18 +199,27 @@ void loop() {
 
     //Serial.printf("Write took %u us\n", write_end - write_start);
 
-    f32 averages[NUM_STRAIN_GAUGES] = { 0 };
+    f32 averages0[ADS0_NUM_GAUGES] = { 0 };
+    f32 averages1[ADS1_NUM_GAUGES] = { 0 };
 
     for (u32 i = 0; i < DATA_BUF_SIZE; i++) {
-      for (u32 j = 0; j < NUM_STRAIN_GAUGES; j++) {
-        averages[j] += (f32)data_front_buf[i].measures[j] * ads_conversion;
+      for (u32 j = 0; j < ADS0_NUM_GAUGES; j++) {
+        averages0[j] += (f32)data_front_buf[i].measures0[j] * ads_conversion;
+      }
+
+      for (u32 j = 0; j < ADS1_NUM_GAUGES; j++) {
+        averages1[j] += (f32)data_front_buf[i].measures1[j] * ads_conversion;
       }
     }
 
     Serial.print(data_front_buf[0].time);
-    for (u32 i = 0; i < NUM_STRAIN_GAUGES; i++) {
-      averages[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%.5f", averages[i]);
+    for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
+      averages0[i] /= (f32)DATA_BUF_SIZE;
+      Serial.printf(",%.4f", averages0[i]);
+    }
+    for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
+      averages1[i] /= (f32)DATA_BUF_SIZE;
+      Serial.printf(",%.4f", averages1[i]);
     }
     Serial.println("");
   }
@@ -260,7 +280,11 @@ void find_file_name(char file_name[FILE_NAME_SIZE + 1]) {
 }
 
 void write_output_header(File& out_file) {
-  u8 header[4] = { 'M', 'E', 'S', 1 + NUM_STRAIN_GAUGES };
+  u8 num_fields = 1 + 
+    ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE +
+    ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE;
+
+  u8 header[4] = { 'M', 'E', 'S', num_fields };
   out_file.write(header, 4);
 
   char gauge_name[] = { 'g', 'a', 'u', 'g', 'e', '0', '0' };
@@ -277,7 +301,8 @@ void write_output_header(File& out_file) {
     out_file.write("time", 4);
   }
 
-  for (u32 i = 0; i < NUM_STRAIN_GAUGES; i++) {
+  // TODO: Actually make this work with the two adcs and the cycles
+  for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
     *(u16*)(field_header) = 1;
     field_header[2] = (u8)mes_types::I16;
     field_header[3] = sizeof(gauge_name);
@@ -339,50 +364,108 @@ void setup1() {
 
   SPI1.begin();
 
+  ads_init(ADS0_CS_PIN);
   ads_init(ADS1_CS_PIN);
 }
 
-u32 cur_pin = 0;
 u32 data_buf_pos = 0;
-u32 prev_time = 0;
+
+u8 ads0_mux_pin = 0;
+u8 ads1_mux_pin = 0;
+u8 ads0_cycle = 0;
+u8 ads1_cycle = 0;
 
 void loop1() {
-  u32 prev_pin = cur_pin;
-  cur_pin = (cur_pin + 1) % NUM_STRAIN_GAUGES;
+  u8 ads0_read_pin = ads0_mux_pin;
+  ads0_mux_pin = (ads0_mux_pin + 1) % ADS0_NUM_GAUGES;
 
-  // Wait for DRDY  
-  while (digitalRead(ADS1_DRDY_PIN) == HIGH);
+  u8 ads1_read_pin = ads1_mux_pin;
+  ads1_mux_pin = (ads1_mux_pin + 1) % ADS1_NUM_GAUGES;
 
-  SPI1.beginTransaction(ads_settings);
-  digitalWrite(ADS1_CS_PIN, LOW);
+  i16 measure0 = 0;
+  i16 measure1 = 0;
 
-  SPI1.transfer((u8)ads_cmd::WREG | (u8)ads_reg::MUX);
-  SPI1.transfer(0x00);
-  SPI1.transfer((cur_pin << 4) | 0b1000);
-  SPI1.transfer((u8)ads_cmd::SYNC);
-  // Rounded up from 3.125
-  delayMicroseconds(4);
-  SPI1.transfer((u8)ads_cmd::WAKEUP);
-  SPI1.transfer((u8)ads_cmd::RDATA);
-  // Rounded up from 6.510
-  delayMicroseconds(7);
+  // ADS0 measure
+  {
+    // Wait for DRDY  
+    while (digitalRead(ADS0_DRDY_PIN) == HIGH);
 
-  i16 sample = 0;
+    SPI1.beginTransaction(ads_settings);
+    digitalWrite(ADS0_CS_PIN, LOW);
 
-  sample |= (i16)SPI1.transfer(0) << 8;
-  sample |= (i16)SPI1.transfer(0);
-  (void)SPI1.transfer(0);
+    SPI1.transfer((u8)ads_cmd::WREG | (u8)ads_reg::MUX);
+    SPI1.transfer(0x00);
+    SPI1.transfer((ads0_mux_pin << 4) | 0b1000);
+    SPI1.transfer((u8)ads_cmd::SYNC);
+    // Rounded up from 3.125
+    delayMicroseconds(4);
+    SPI1.transfer((u8)ads_cmd::WAKEUP);
+    SPI1.transfer((u8)ads_cmd::RDATA);
+    // Rounded up from 6.510
+    delayMicroseconds(7);
 
-  digitalWrite(ADS1_CS_PIN, HIGH);
-  SPI1.endTransaction();
+    measure0 |= (i16)SPI1.transfer(0) << 8;
+    measure0 |= (i16)SPI1.transfer(0);
+    (void)SPI1.transfer(0);
 
-  if (prev_pin == 0) {
+    digitalWrite(ADS0_CS_PIN, HIGH);
+    SPI1.endTransaction();
+  }
+
+  // ADS1 measure
+  {
+    // Wait for DRDY  
+    while (digitalRead(ADS1_DRDY_PIN) == HIGH);
+
+    SPI1.beginTransaction(ads_settings);
+    digitalWrite(ADS1_CS_PIN, LOW);
+
+    SPI1.transfer((u8)ads_cmd::WREG | (u8)ads_reg::MUX);
+    SPI1.transfer(0x00);
+    SPI1.transfer((ads1_mux_pin << 4) | 0b1000);
+    SPI1.transfer((u8)ads_cmd::SYNC);
+    // Rounded up from 3.125
+    delayMicroseconds(4);
+    SPI1.transfer((u8)ads_cmd::WAKEUP);
+    SPI1.transfer((u8)ads_cmd::RDATA);
+    // Rounded up from 6.510
+    delayMicroseconds(7);
+
+    measure1 |= (i16)SPI1.transfer(0) << 8;
+    measure1 |= (i16)SPI1.transfer(0);
+    (void)SPI1.transfer(0);
+
+    digitalWrite(ADS1_CS_PIN, HIGH);
+    SPI1.endTransaction();
+  }
+
+  // Checking for new sample
+  if (
+    ads0_read_pin == 0 && ads1_read_pin == 0 &&
+    ads0_cycle == 0 && ads1_cycle == 0
+  ) {
     data_back_buf[data_buf_pos++] = { 0 };
     data_back_buf[data_buf_pos-1].time = micros();
-  } 
-  data_back_buf[data_buf_pos-1].measures[prev_pin] = sample;
+  }
 
-  if (data_buf_pos >= DATA_BUF_SIZE) {
+  // Writing measures
+  data_back_buf[data_buf_pos-1].measures0[
+    ads0_cycle * ADS0_NUM_GAUGES + ads0_read_pin
+  ] = measure0;
+  data_back_buf[data_buf_pos-1].measures1[
+    ads1_cycle * ADS1_NUM_GAUGES + ads1_read_pin
+  ] = measure1;
+
+  // Updating cycles
+  if (ads0_mux_pin == 0) { ads0_cycle++; }
+  if (ads1_mux_pin == 0) { ads1_cycle++; }
+
+  // Check for buffer swap
+  if (
+    ads0_cycle == ADS0_CYCLES_PER_SAMPLE - 1 &&
+    ads1_cycle == ADS1_CYCLES_PER_SAMPLE - 1 &&
+    data_buf_pos >= DATA_BUF_SIZE
+  ) {
     tmp_buf = data_front_buf;
     data_front_buf = data_back_buf;
     data_back_buf = tmp_buf;
@@ -391,6 +474,10 @@ void loop1() {
 
     rp2040.fifo.push(1);
   }
+
+  // Wrapping cycles
+  ads0_cycle %= ADS0_CYCLES_PER_SAMPLE;
+  ads1_cycle %= ADS1_CYCLES_PER_SAMPLE;
 }
 
 static void ads_init(u8 ads_cs_pin) {

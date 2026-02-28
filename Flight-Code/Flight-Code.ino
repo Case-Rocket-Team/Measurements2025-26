@@ -68,11 +68,11 @@ const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
 #define DATA_BUF_SIZE 512
 
-#define ADS0_NUM_GAUGES 2
+#define ADS0_NUM_GAUGES 4
 #define ADS1_NUM_GAUGES 2
 
-#define ADS0_CYCLES_PER_SAMPLE 1 
-#define ADS1_CYCLES_PER_SAMPLE 1 
+#define ADS0_CYCLES_PER_SAMPLE 1
+#define ADS1_CYCLES_PER_SAMPLE 2
 
 static_assert(
   ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE ==
@@ -118,7 +118,7 @@ enum class mes_types : u8 {
 #define SWITCH_PIN 25
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "02-21-26-testing"
+#define CUR_FILE_NAME "02-28-26-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -189,7 +189,7 @@ void loop() {
     if (digitalRead(SWITCH_PIN) == 0) {
 #if WRITE_FILE
       u32 written = output_file.write((u8*)&num_samples, 4);
-      Serial.printf("%d written (%u expected) | ", written, 4);
+      Serial.printf("%d written (%u expected)\n", written, 4);
       output_file.close();
 #endif
 
@@ -215,11 +215,11 @@ void loop() {
     Serial.print(data_front_buf[0].time);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%.4f", averages0[i]);
+      Serial.printf(",%.2f", averages0[i]);
     }
     for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
       averages1[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%.4f", averages1[i]);
+      Serial.printf(",%.2f", averages1[i]);
     }
     Serial.println("");
   }
@@ -287,7 +287,11 @@ void write_output_header(File& out_file) {
   u8 header[4] = { 'M', 'E', 'S', num_fields };
   out_file.write(header, 4);
 
-  char gauge_name[] = { 'g', 'a', 'u', 'g', 'e', '0', '0' };
+  char gauge_name[] = {
+    'a', 'd', 's', '_',
+    'g', 'a', 'u', 'g', 'e', '_', 
+    'c', 'y', 'c', 'l', 'e', '_'
+  };
 
   u8* field_header = header;
 
@@ -302,21 +306,30 @@ void write_output_header(File& out_file) {
   }
 
   // TODO: Actually make this work with the two adcs and the cycles
-  for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
-    *(u16*)(field_header) = 1;
-    field_header[2] = (u8)mes_types::I16;
-    field_header[3] = sizeof(gauge_name);
+  *(u16*)(field_header) = 1;
+  field_header[2] = (u8)mes_types::I16;
+  field_header[3] = sizeof(gauge_name);
 
-    if (i < 10) {
-      gauge_name[sizeof(gauge_name) - 1] = i + '0';
-      gauge_name[sizeof(gauge_name) - 2] = '0';
-    } else {
-      gauge_name[sizeof(gauge_name) - 1] = (i % 10) + '0';
-      gauge_name[sizeof(gauge_name) - 2] = (i / 10) + '0';
+  gauge_name[3] = '0';
+  for (u8 c = 0; c < ADS0_CYCLES_PER_SAMPLE; c++) {
+    gauge_name[15] = c + '0';
+    for (u8 g = 0; g < ADS0_NUM_GAUGES; g++) {
+      gauge_name[9] = g + '0';
+
+      out_file.write(field_header, 4);
+      out_file.write(gauge_name, sizeof(gauge_name));
     }
+  }
 
-    out_file.write(field_header, 4);
-    out_file.write(gauge_name, sizeof(gauge_name));
+  gauge_name[3] = '1';
+  for (u8 c = 0; c < ADS1_CYCLES_PER_SAMPLE; c++) {
+    gauge_name[15] = c + '0';
+    for (u8 g = 0; g < ADS1_NUM_GAUGES; g++) {
+      gauge_name[9] = g + '0';
+
+      out_file.write(field_header, 4);
+      out_file.write(gauge_name, sizeof(gauge_name));
+    }
   }
 
   out_file.flush();
@@ -462,9 +475,9 @@ void loop1() {
 
   // Check for buffer swap
   if (
-    ads0_cycle == ADS0_CYCLES_PER_SAMPLE - 1 &&
-    ads1_cycle == ADS1_CYCLES_PER_SAMPLE - 1 &&
-    data_buf_pos >= DATA_BUF_SIZE
+    data_buf_pos >= DATA_BUF_SIZE && 
+    ads0_cycle == ADS0_CYCLES_PER_SAMPLE &&
+    ads1_cycle == ADS1_CYCLES_PER_SAMPLE
   ) {
     tmp_buf = data_front_buf;
     data_front_buf = data_back_buf;

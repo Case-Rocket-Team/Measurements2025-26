@@ -14,7 +14,7 @@ typedef float f32;
 #define FLASH_CS 17
 #define SWITCH_PIN 25
 
-#define IN_FILE_NAME "02-19-26-testing0001.mes"
+#define IN_FILE_NAME "02-28-26-testing0001.mes"
 
 namespace mes {
   enum class types : u8 {
@@ -116,48 +116,50 @@ void setup() {
 
   for (u32 i = 0; i < num_samples; i++) {
     for (u32 j = 0; j < header.num_fields; j++) {
-      switch (fields[j].data_type) {
-        case (u8)mes::types::I8: {
-          i8 d;
-          in_file.read((u8*)(&d), 1);
-          Serial.print(d);
-        } break;
+      if ((i % fields[j].freq) == 0) {
+        switch (fields[j].data_type) {
+          case (u8)mes::types::I8: {
+            i8 d;
+            in_file.read((u8*)(&d), 1);
+            Serial.print(d);
+          } break;
 
-        case (u8)mes::types::I16: {
-          i16 d;
-          in_file.read((u8*)(&d), 2);
-          Serial.print(d);
-        } break;
+          case (u8)mes::types::I16: {
+            i16 d;
+            in_file.read((u8*)(&d), 2);
+            Serial.print(d);
+          } break;
 
-        case (u8)mes::types::I32: {
-          i32 d;
-          in_file.read((u8*)(&d), 4);
-          Serial.print(d);
-        } break;
+          case (u8)mes::types::I32: {
+            i32 d;
+            in_file.read((u8*)(&d), 4);
+            Serial.print(d);
+          } break;
 
-        case (u8)mes::types::U8: {
-          u8 d;
-          in_file.read((u8*)(&d), 1);
-          Serial.print(d);
-        } break;
+          case (u8)mes::types::U8: {
+            u8 d;
+            in_file.read((u8*)(&d), 1);
+            Serial.print(d);
+          } break;
 
-        case (u8)mes::types::U16: {
-          u16 d;
-          in_file.read((u8*)(&d), 2);
-          Serial.print(d);
-        } break;
+          case (u8)mes::types::U16: {
+            u16 d;
+            in_file.read((u8*)(&d), 2);
+            Serial.print(d);
+          } break;
 
-        case (u8)mes::types::U32: {
-          u32 d;
-          in_file.read((u8*)(&d), 4);
-          Serial.print(d);
-        } break;
+          case (u8)mes::types::U32: {
+            u32 d;
+            in_file.read((u8*)(&d), 4);
+            Serial.print(d);
+          } break;
 
-        case (u8)mes::types::F32: {
-          f32 d;
-          in_file.read((u8*)(&d), 4);
-          Serial.print(d);
-        } break;
+          case (u8)mes::types::F32: {
+            f32 d;
+            in_file.read((u8*)(&d), 4);
+            Serial.print(d);
+          } break;
+        }
       }
 
       if (j != (u32)(header.num_fields - 1)) {
@@ -165,7 +167,7 @@ void setup() {
       } else {
         Serial.print("\n");
         Serial.flush();
-        delayMicroseconds(500);
+        delayMicroseconds(750);
       }
     }
   }
@@ -175,5 +177,5 @@ void setup() {
   in_file.close();
 }
 
-void loop() {
-}
+void loop() { }
+

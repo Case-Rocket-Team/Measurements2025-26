@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include <SD.h>
 
-#define WRITE_FILE 0
+#define WRITE_FILE 1
 
 typedef int8_t i8;
 typedef int16_t i16;
@@ -66,13 +66,13 @@ const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
-#define DATA_BUF_SIZE 512
+#define DATA_BUF_SIZE 128
 
-#define ADS0_NUM_GAUGES 4
-#define ADS1_NUM_GAUGES 2
+#define ADS0_NUM_GAUGES 8
+#define ADS1_NUM_GAUGES 6
 
-#define ADS0_CYCLES_PER_SAMPLE 1
-#define ADS1_CYCLES_PER_SAMPLE 2
+#define ADS0_CYCLES_PER_SAMPLE 3
+#define ADS1_CYCLES_PER_SAMPLE 4
 
 static_assert(
   ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE ==
@@ -118,7 +118,7 @@ enum class mes_types : u8 {
 #define SWITCH_PIN 25
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "02-28-26-testing"
+#define CUR_FILE_NAME "03-03-26-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -398,10 +398,16 @@ void loop1() {
   i16 measure0 = 0;
   i16 measure1 = 0;
 
+  //u32 start = micros();
+
   // ADS0 measure
   {
     // Wait for DRDY  
     while (digitalRead(ADS0_DRDY_PIN) == HIGH);
+
+    //if (data_buf_pos == 0) {
+    //  Serial.printf("ADS0 DRDY done at %u\n", micros() - start);
+    //}
 
     SPI1.beginTransaction(ads_settings);
     digitalWrite(ADS0_CS_PIN, LOW);
@@ -425,10 +431,18 @@ void loop1() {
     SPI1.endTransaction();
   }
 
+  //if (data_buf_pos == 0) {
+  //  Serial.printf("ADS0 read done at %u\n", micros() - start);
+  //}
+
   // ADS1 measure
   {
     // Wait for DRDY  
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
+
+    //if (data_buf_pos == 0) {
+    //  Serial.printf("ADS1 DRDY done at %u\n", micros() - start);
+    //}
 
     SPI1.beginTransaction(ads_settings);
     digitalWrite(ADS1_CS_PIN, LOW);
@@ -451,6 +465,11 @@ void loop1() {
     digitalWrite(ADS1_CS_PIN, HIGH);
     SPI1.endTransaction();
   }
+
+  //if (data_buf_pos == 0) {
+  //  Serial.printf("ADS1 read done at %u\n", micros() - start);
+  //  Serial.println("=============================");
+  //}
 
   // Checking for new sample
   if (

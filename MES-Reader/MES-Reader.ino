@@ -14,7 +14,7 @@ typedef float f32;
 #define FLASH_CS 17
 #define SWITCH_PIN 25
 
-#define IN_FILE_NAME "02-28-26-testing0001.mes"
+#define IN_FILE_NAME "03-03-26-testing0000.mes"
 
 namespace mes {
   enum class types : u8 {
@@ -98,7 +98,7 @@ void setup() {
 
 
     if (i != (u32)(header.num_fields - 1)) {
-      Serial.print(", ");
+      Serial.print(",");
     } else {
       Serial.print("\n");
     }
@@ -163,7 +163,7 @@ void setup() {
       }
 
       if (j != (u32)(header.num_fields - 1)) {
-        Serial.print(", ");
+        Serial.print(",");
       } else {
         Serial.print("\n");
         Serial.flush();

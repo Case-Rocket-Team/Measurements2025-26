@@ -36,18 +36,15 @@ for name in headerLine:
     if cycleNumber + 1 > cycles[adcIndex]:
         cycles[adcIndex] += 1
 
-# get all time values
-time = file['time'].values.tolist();
-
 # get total number of data measurements
-datas = gauges[0] * cycles[0] + gauges[1] * cycles[1]
-
+numGaugeMeasurements = gauges[0] * cycles[0] + gauges[1] * cycles[1]
 
 # get all gauge values
 gaugeVoltagesData = []
-for i in range(datas):
+for measurementNum in range(numGaugeMeasurements):
+
     # get gauge data and convert to voltage
-    gaugeVoltagesData.append([i * 5 / (2**16) for i in file[headerLine[i]].values.tolist()])
+    gaugeVoltagesData.append([value * 5 / (2**16) for value in file[headerLine[measurementNum]].values.tolist()])
 
 # get all time values
 measurementTimes = file["time"].values.tolist()
@@ -58,7 +55,7 @@ allGaugeMeasurementTimes = []
 
 # calculate time step for each measurement
 for i in range(1, len(measurementTimes)):
-    timeChange = (measurementTimes[i] - measurementTimes[i - 1]) / datas
+    timeChange = (measurementTimes[i] - measurementTimes[i - 1]) / numGaugeMeasurements
     allTimeChanges.append(timeChange)
 
 # output all combined gauge voltages here:
@@ -77,23 +74,25 @@ for adcIndex in range(adcCount):
             singleGaugeVoltages = []
             gaugeMeasurementTimes = []
             # get all the cycles for a gauge
-            for index in range(cycleCount):
-
-                headerIndex = adcIndex * gauges[adcIndex] * cycles[adcIndex] + index * gauges[adcIndex]
+            for cycleIndex in range(cycleCount):
+                numPrevColumns = 0
+                if adcIndex > 0:
+                    numPrevColumns = gauges[adcIndex-1] * cycles[adcIndex-1]
+                headerIndex = numPrevColumns + cycleIndex * gauges[adcIndex]
 
                 # add the column data to the list of columns for a single gauge
                 singleGaugeVoltages.append(gaugeVoltagesData[headerIndex])
 
                 # Calculate time when measurements were taken for a gauge at each cycle
-                timeOffset = [(adcIndex + 2 * gaugeIndex + gauges[adcIndex] * index * 2) * i for i in allTimeChanges]
+                timeOffset = [(adcIndex + 2 * gaugeIndex + gauges[adcIndex] * cycleIndex * 2) * timeChange for timeChange in allTimeChanges]
                 
                 # add it to the initial measurement time
                 measurementTime = [a + b - measurementTimes[0] for a, b in zip(measurementTimes, timeOffset)]
                 gaugeMeasurementTimes.append(measurementTime)
 
             # zipper the lists together to form one long one
-            singleGaugeVoltages = [i for sublist in zip(*singleGaugeVoltages) for i in sublist]
-            singleGaugeMeasurementTimes = [i for sublist in zip(*gaugeMeasurementTimes) for i in sublist]
+            singleGaugeVoltages = [value for sublist in zip(*singleGaugeVoltages) for value in sublist]
+            singleGaugeMeasurementTimes = [value for sublist in zip(*gaugeMeasurementTimes) for value in sublist]
 
             # add the combined gauge data to the gauge voltages
             gaugeVoltages.append(singleGaugeVoltages)
@@ -102,12 +101,15 @@ for adcIndex in range(adcCount):
     # only one cycle
     else:
         for gaugeIndex in range(gauges[adcIndex]):
-            headerIndex = adcIndex * gauges[adcIndex] * cycles[adcIndex] + gaugeIndex
-
-            # add gauge data even if only one cycle to have each correspond to their indices
+            numPrevColumns = 0
+            if adcIndex > 0:
+                numPrevColumns = gauges[adcIndex-1] * cycles[adcIndex-1]
+            headerIndex = numPrevColumns + gaugeIndex
+            # add the column data to the list of columns for a single gauge
             gaugeVoltages.append(gaugeVoltagesData[headerIndex])
 
-            timeOffset = [(adcIndex + 2 * gaugeIndex) * i for i in allTimeChanges]
+            # Calculate time when measurements were taken for a gauge at each cycle
+            timeOffset = [(adcIndex + 2 * gaugeIndex) * timeChange for timeChange in allTimeChanges]
             
             # add it to the initial measurement time
             measurementTime = [a + b - measurementTimes[0] for a, b in zip(measurementTimes, timeOffset)]
@@ -120,10 +122,12 @@ for i in range(len(allGaugeMeasurementTimes)):
         gaugeVoltages[i] = gaugeVoltages[i][:len(allGaugeMeasurementTimes[i])]
 
 # plot data
-for i in range(len(allGaugeMeasurementTimes)):
-    plt.plot(allGaugeMeasurementTimes[i], gaugeVoltages[i], label = f'Gauge{i+1}', marker='o', linestyle='-', markersize=1.5, color=f'C{i}')
+for i in range(len(gauges)):
+    for j in range(gauges[i]):
+        index = gauges[i] * i + j
+        plt.plot(allGaugeMeasurementTimes[index], gaugeVoltages[index], label = f'ADC{i+1} Gauge{j+1}', marker='o', linestyle='-', markersize=1.5, color=f'C{index}')
     
-plt.xlabel('Time (s)')
+plt.xlabel('Time')
 plt.ylabel('Voltage (V)')
 plt.legend()
 plt.show()

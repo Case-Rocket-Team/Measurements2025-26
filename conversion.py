@@ -8,7 +8,7 @@ if len(sys.argv) > 1:
     fileName = sys.argv[1]
 else:
     # Default file to open if no other inputs are used
-    fileName = r"G:\Shared drives\Case Rocket Team\2025 - 2026\26D - Measurements Subsystem\6. Data\02-28-2026-testing0001.csv"
+    fileName = r"G:\Shared drives\Case Rocket Team\2025 - 2026\26D - Measurements Subsystem\6. Data\03-03-2026testing0000.csv"
 
 file = pd.read_csv(fileName, delimiter=",")
 
@@ -78,7 +78,7 @@ for adcIndex in range(adcCount):
                 numPrevColumns = 0
                 if adcIndex > 0:
                     numPrevColumns = gauges[adcIndex-1] * cycles[adcIndex-1]
-                headerIndex = numPrevColumns + cycleIndex * gauges[adcIndex]
+                headerIndex = numPrevColumns + cycleIndex * gauges[adcIndex] + gaugeIndex
 
                 # add the column data to the list of columns for a single gauge
                 singleGaugeVoltages.append(gaugeVoltagesData[headerIndex])

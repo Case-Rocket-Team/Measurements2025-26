@@ -1338,6 +1338,167 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Device:Buzzer"
+			(pin_names
+				(offset 0.0254)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "BZ"
+				(at 3.81 1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+				)
+			)
+			(property "Value" "Buzzer"
+				(at 3.81 -1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+				)
+			)
+			(property "Footprint" ""
+				(at -0.635 2.54 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at -0.635 2.54 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Buzzer, polarized"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "quartz resonator ceramic"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "*Buzzer*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Buzzer_0_1"
+				(polyline
+					(pts
+						(xy -1.651 1.905) (xy -1.143 1.905)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.397 2.159) (xy -1.397 1.651)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 0 3.175)
+					(mid 3.1612 0)
+					(end 0 -3.175)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 3.175) (xy 0 -3.175)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Buzzer_1_1"
+				(pin passive line
+					(at -2.54 2.54 0)
+					(length 2.54)
+					(name "+"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "-"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "HILetgo_ADS1256_1"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -5302,6 +5463,18 @@
 		)
 	)
 	(rectangle
+		(start 26.67 187.96)
+		(end 66.04 205.74)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid 0a78fc82-ec80-46b2-af21-5ff88815713f)
+	)
+	(rectangle
 		(start 26.67 127)
 		(end 76.2 153.67)
 		(stroke
@@ -5611,6 +5784,16 @@
 		)
 		(uuid "83eb24d7-b2ac-41a3-982f-772a626fe164")
 	)
+	(text "BUZZER\n"
+		(exclude_from_sim no)
+		(at 55.118 196.088 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "85958827-2256-4ea1-87dd-d2b898ac7115")
+	)
 	(text "5V"
 		(exclude_from_sim no)
 		(at 245.11 24.384 0)
@@ -5750,6 +5933,16 @@
 			)
 		)
 		(uuid "d4e6faed-10ad-4a3b-b8aa-6f14c7290735")
+	)
+	(text "BUZZER\n"
+		(exclude_from_sim no)
+		(at 55.626 62.484 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "d7c52838-dc2e-4bfe-9153-06039a59cfac")
 	)
 	(text "5V"
 		(exclude_from_sim no)
@@ -6401,6 +6594,16 @@
 	)
 	(wire
 		(pts
+			(xy 60.96 62.23) (xy 66.04 62.23)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2abb616d-0c02-4161-9217-4b392b7f8d34")
+	)
+	(wire
+		(pts
 			(xy 60.96 74.93) (xy 66.04 74.93)
 		)
 		(stroke
@@ -6841,6 +7044,16 @@
 	)
 	(wire
 		(pts
+			(xy 43.18 200.66) (xy 48.26 200.66)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "60a43e9a-2aee-489e-bfb9-18fdafb4e841")
+	)
+	(wire
+		(pts
 			(xy 241.3 55.88) (xy 241.3 46.99)
 		)
 		(stroke
@@ -6988,6 +7201,16 @@
 			(type default)
 		)
 		(uuid "7238b577-7a3a-4a07-a4b4-31e7e92911ba")
+	)
+	(wire
+		(pts
+			(xy 43.18 195.58) (xy 49.53 195.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "723c1d8b-cd26-4598-a913-11d7bdd072ae")
 	)
 	(wire
 		(pts
@@ -11279,6 +11502,73 @@
 		)
 	)
 	(symbol
+		(lib_id "power:Earth")
+		(at 48.26 200.66 90)
+		(mirror x)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e3ae4b1e-8de6-4659-bf45-56a2f6c39954")
+		(property "Reference" "#PWR012"
+			(at 54.61 200.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 52.07 200.6599 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" ""
+			(at 48.26 200.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 48.26 200.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"Earth\""
+			(at 48.26 200.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "5b3b4595-bb1d-41d4-8ad9-c65d90b313d9")
+		)
+		(instances
+			(project "MeasurementsCircuit_0"
+				(path "/645b4507-ed95-4c75-9125-7b8b4069ec23"
+					(reference "#PWR012")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_name "StrainGaugeModule_3")
 		(lib_id "MeasurementsLibrary:StrainGaugeModule")
 		(at 231.14 201.93 0)
@@ -11421,6 +11711,75 @@
 			(project "MeasurementsCircuit_0"
 				(path "/645b4507-ed95-4c75-9125-7b8b4069ec23"
 					(reference "S9")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:Buzzer")
+		(at 40.64 198.12 0)
+		(mirror y)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "f7a87bd7-b236-4c29-baa6-b525c2b8e271")
+		(property "Reference" "BZ1"
+			(at 39.8849 190.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "Buzzer"
+			(at 30.734 189.738 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 41.275 195.58 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 41.275 195.58 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Buzzer, polarized"
+			(at 40.64 198.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "fb962cd0-957a-4c33-ad65-e8b30509fe77")
+		)
+		(pin "2"
+			(uuid "c514b7c2-0335-44de-a3e0-e72b67e879df")
+		)
+		(instances
+			(project ""
+				(path "/645b4507-ed95-4c75-9125-7b8b4069ec23"
+					(reference "BZ1")
 					(unit 1)
 				)
 			)

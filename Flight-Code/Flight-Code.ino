@@ -118,7 +118,7 @@ enum class mes_types : u8 {
 #define SWITCH_PIN 25
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "03-03-26-testing"
+#define CUR_FILE_NAME "03-05-26-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -172,10 +172,13 @@ void setup() {
 }
 
 void loop() {
-  while (rp2040.fifo.available()) {
+  if (rp2040.fifo.available()) {
     rp2040.fifo.pop();
 
+    Serial.printf("%u us since last write\n", micros() - last_time);
+
     num_samples += DATA_BUF_SIZE;
+
     u32 write_start = micros();
 
 #if WRITE_FILE
@@ -184,7 +187,7 @@ void loop() {
     Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);
 #endif
 
-    u32 write_end = micros();
+    Serial.printf("Write took %u us\n", micros() - write_start);
 
     if (digitalRead(SWITCH_PIN) == 0) {
 #if WRITE_FILE
@@ -196,8 +199,6 @@ void loop() {
       Serial.println("Switch is turned off, stopping now");
       while (1);
     }
-
-    //Serial.printf("Write took %u us\n", write_end - write_start);
 
     f32 averages0[ADS0_NUM_GAUGES] = { 0 };
     f32 averages1[ADS1_NUM_GAUGES] = { 0 };
@@ -222,6 +223,8 @@ void loop() {
       Serial.printf(",%.2f", averages1[i]);
     }
     Serial.println("");
+
+    last_time = micros();
   }
 }
 

@@ -1,6 +1,7 @@
 
 #include <SPI.h>
 #include <SD.h>
+#include <Wire.h>
 
 #define WRITE_FILE 1
 
@@ -59,6 +60,21 @@ enum class ads_reg : u8 {
   FSC2   = 0xa,
 };
 
+#define LSM6DSOX_ADDRESS 0x6A
+
+#define LSM6DSOX_WHO_AM_I_REG 0X0F
+#define LSM6DSOX_CTRL1_XL 0X10
+#define LSM6DSOX_CTRL2_G 0X11
+
+#define LSM6DSOX_STATUS_REG 0X1E
+
+#define LSM6DSOX_OUTX_L_XL 0X28
+#define LSM6DSOX_OUTX_H_XL 0X29
+#define LSM6DSOX_OUTY_L_XL 0X2A
+#define LSM6DSOX_OUTY_H_XL 0X2B
+#define LSM6DSOX_OUTZ_L_XL 0X2C
+#define LSM6DSOX_OUTZ_H_XL 0X2D
+
 const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 #define ADS_PGA 0b001
@@ -84,6 +100,14 @@ struct sample {
   u32 time;
   i16 measures0[ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE];
   i16 measures1[ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE];
+  union {
+    struct {
+      i16 accel_x;
+      i16 accel_y;
+      i16 accel_z;
+    };
+    i16 accel[3];
+  };
 };
 #pragma pack(pop)
 
@@ -118,7 +142,7 @@ enum class mes_types : u8 {
 #define SWITCH_PIN 25
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "03-05-26-testing"
+#define CUR_FILE_NAME "03-21-26-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -165,6 +189,7 @@ void setup() {
     Serial.println("Failed to create output file");
     while (1);
   }
+
   write_output_header(output_file);
 #endif
 
@@ -214,6 +239,7 @@ void loop() {
     }
 
     Serial.print(data_front_buf[0].time);
+    Serial.printf(",%d,%d,%d,", data_front_buf[0].accel_x, data_front_buf[0].accel_y, data_front_buf[0].accel_z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
       Serial.printf(",%.2f", averages0[i]);
@@ -285,7 +311,7 @@ void find_file_name(char file_name[FILE_NAME_SIZE + 1]) {
 void write_output_header(File& out_file) {
   u8 num_fields = 1 + 
     ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE +
-    ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE;
+    ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE + 3;
 
   u8 header[4] = { 'M', 'E', 'S', num_fields };
   out_file.write(header, 4);
@@ -308,7 +334,6 @@ void write_output_header(File& out_file) {
     out_file.write("time", 4);
   }
 
-  // TODO: Actually make this work with the two adcs and the cycles
   *(u16*)(field_header) = 1;
   field_header[2] = (u8)mes_types::I16;
   field_header[3] = sizeof(gauge_name);
@@ -335,6 +360,24 @@ void write_output_header(File& out_file) {
     }
   }
 
+  *(u16*)(field_header) = 1;
+  field_header[2] = (u8)mes_types::I16;
+  field_header[3] = sizeof("accel_x") - 1;
+  out_file.write(field_header, 4);
+  out_file.write("accel_x", sizeof("accel_x") - 1);
+
+  *(u16*)(field_header) = 1;
+  field_header[2] = (u8)mes_types::I16;
+  field_header[3] = sizeof("accel_y") - 1;
+  out_file.write(field_header, 4);
+  out_file.write("accel_y", sizeof("accel_y") - 1);
+
+  *(u16*)(field_header) = 1;
+  field_header[2] = (u8)mes_types::I16;
+  field_header[3] = sizeof("accel_z") - 1;
+  out_file.write(field_header, 4);
+  out_file.write("accel_z", sizeof("accel_z") - 1);
+
   out_file.flush();
 }
 
@@ -355,6 +398,8 @@ static void ads_init(u8 ads_cs_pin);
 static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg);
 static void ads_write_reg(u8 ads_cs_pin, ads_reg reg, u8 val);
 static void ads_send_cmd(u8 ads_cs_pin, ads_cmd cmd);
+
+static int accel_read_registers(uint8_t address, uint8_t *data, size_t length);
 
 void setup1() {
   data_front_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
@@ -382,6 +427,11 @@ void setup1() {
 
   ads_init(ADS0_CS_PIN);
   ads_init(ADS1_CS_PIN);
+
+  Wire.begin();
+  Wire.setClock(1000000);
+  // Sets accelerometer frequency
+  accel_write_register(LSM6DSOX_CTRL1_XL, 0b01011110);
 }
 
 u32 data_buf_pos = 0;
@@ -481,6 +531,12 @@ void loop1() {
   ) {
     data_back_buf[data_buf_pos++] = { 0 };
     data_back_buf[data_buf_pos-1].time = micros();
+
+    accel_read_registers(
+      LSM6DSOX_OUTX_L_XL,
+      (uint8_t *)data_back_buf[data_buf_pos-1].accel,
+      6
+    );
   }
 
   // Writing measures
@@ -574,3 +630,32 @@ static void ads_send_cmd(u8 ads_cs_pin, ads_cmd cmd) {
   SPI1.endTransaction();
 }
 
+static int accel_read_registers(uint8_t address, uint8_t *data, size_t length) {
+    Wire.beginTransmission(LSM6DSOX_ADDRESS);
+    Wire.write(address);
+
+    if (Wire.endTransmission(false) != 0) {
+        return -1;
+    }
+
+    if (Wire.requestFrom(LSM6DSOX_ADDRESS, length) != length) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < length; i++) {
+        *data++ = Wire.read();
+    }
+
+    return 1;
+}
+
+static int accel_write_register(uint8_t address, uint8_t value) {
+    Wire.beginTransmission(LSM6DSOX_ADDRESS);
+    Wire.write(address);
+    Wire.write(value);
+    if (Wire.endTransmission() != 0) {
+        return 0;
+    }
+
+    return 1;
+}

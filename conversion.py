@@ -12,9 +12,16 @@ else:
 
 file = pd.read_csv(fileName, delimiter=",")
 
+hasAccel = False
+
 # Grab the header and delete time name
 headerLine = file.columns.tolist()
-headerLine = headerLine[1:]
+
+if "accel_x" in headerLine:
+    hasAccel = True
+    headerLine = headerLine[1:-3]
+else:
+    headerLine = headerLine[1:]
 
 # Number of Analog to Digital converters and number of gauges connected to each converter and number of cycles per adc
 adcCount = 2
@@ -116,18 +123,40 @@ for adcIndex in range(adcCount):
 
             allGaugeMeasurementTimes.append(measurementTime)
 
+fig, axs = plt.subplots(2 if hasAccel else 1, 1)
+
+if hasAccel:
+    accelTimes = [t - measurementTimes[0] for t in measurementTimes]
+    accelX = [x * (8 / 2 ** 15) for x in file["accel_x"].values.tolist()]
+    accelY = [y * (8 / 2 ** 15) for y in file["accel_y"].values.tolist()]
+    accelZ = [z * (8 / 2 ** 15) for z in file["accel_z"].values.tolist()]
+
+
+    axs[1].plot(accelTimes, accelX, label="Accel X")
+    axs[1].plot(accelTimes, accelY, label="Accel Y")
+    axs[1].plot(accelTimes, accelZ, label="Accel Z")
+
+    axs[1].set_xlabel("Time")
+    axs[1].set_ylabel("Acceleration (g)")
+    axs[1].legend()
+
 # Trim voltage data to match the length of the time data
 for i in range(len(allGaugeMeasurementTimes)):
     if len(allGaugeMeasurementTimes[i]) < len(gaugeVoltages[i]):
         gaugeVoltages[i] = gaugeVoltages[i][:len(allGaugeMeasurementTimes[i])]
 
+gaugeAxes = axs[0] if hasAccel else axs
+
 # plot data
 for i in range(len(gauges)):
     for j in range(gauges[i]):
         index = gauges[i] * i + j
-        plt.plot(allGaugeMeasurementTimes[index], gaugeVoltages[index], label = f'ADC{i+1} Gauge{j+1}', marker='o', linestyle='-', markersize=1.5, color=f'C{index}')
+        gaugeAxes.plot(allGaugeMeasurementTimes[index], gaugeVoltages[index], label = f'ADC{i+1} Gauge{j+1}', marker='o', linestyle='-', markersize=1.5, color=f'C{index}')
     
-plt.xlabel('Time')
-plt.ylabel('Voltage (V)')
-plt.legend()
+gaugeAxes.set_xlabel("Time")
+gaugeAxes.set_ylabel("Voltage (V)")
+gaugeAxes.legend()
+
 plt.show()
+
+

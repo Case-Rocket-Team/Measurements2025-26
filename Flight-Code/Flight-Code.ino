@@ -3,7 +3,21 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 1
+#define WRITE_FILE 0
+
+#define TEST_MODE 1
+
+#if TEST_MODE
+#    define PAD_RECORD_TIME_MS (10 * 1000)
+#    define FLIGHT_RECORD_TIME_MS (30 * 1000)
+#    define LAUNCH_THRESHOLD 4.0f
+#    define LAUNCH_FILTER 0.9f
+#else
+#    define PAD_RECORD_TIME_MS (30 * 1000)
+#    define FLIGHT_RECORD_TIME_MS (10 * 60 * 1000)
+#    define LAUNCH_THRESHOLD 7.5f
+#    define LAUNCH_FILTER 0.9f
+#endif
 
 typedef int8_t i8;
 typedef int16_t i16;
@@ -96,18 +110,20 @@ static_assert(
 );
 
 #pragma pack(push, 1)
+union accel_sample {
+  struct {
+    i16 x;
+    i16 y;
+    i16 z;
+  };
+  i16 v[3];
+};
+
 struct sample {
   u32 time;
   i16 measures0[ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE];
   i16 measures1[ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE];
-  union {
-    struct {
-      i16 accel_x;
-      i16 accel_y;
-      i16 accel_z;
-    };
-    i16 accel[3];
-  };
+  accel_sample accel;
 };
 #pragma pack(pop)
 
@@ -152,10 +168,13 @@ void find_file_name(char file_name[FILE_NAME_SIZE]);
 
 void write_output_header(File& out_file);
 
-File output_file;
-u8 pin_reads = 0xff;
+File out_file0;
+File out_file1;
 u32 num_samples = 0;
-u32 last_time = 0;
+
+bool in_flight = false;
+f32 accel_mag_avg = 0.0f;
+u32 flight_start = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -184,31 +203,27 @@ void setup() {
 
   Serial.printf("Creating file '%s'\n", file_name);
 
-  output_file = SD.open(file_name, FILE_WRITE);
-  if (!output_file) {
-    Serial.println("Failed to create output file");
+  out_file0 = SD.open(file_name, FILE_WRITE);
+  if (!out_file0) {
+    Serial.println("Failed to create output file 0");
     while (1);
   }
 
-  write_output_header(output_file);
+  write_output_header(out_file0);
 #endif
-
-  last_time = micros();
 }
 
 void loop() {
   if (rp2040.fifo.available()) {
     rp2040.fifo.pop();
 
-    Serial.printf("%u us since last write\n", micros() - last_time);
-
     num_samples += DATA_BUF_SIZE;
 
     u32 write_start = micros();
 
 #if WRITE_FILE
-    u32 written = output_file.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
-    output_file.flush();
+    u32 written = out_file0.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
+    out_file0.flush();
     Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);
 #endif
 
@@ -216,9 +231,9 @@ void loop() {
 
     if (digitalRead(SWITCH_PIN) == 0) {
 #if WRITE_FILE
-      u32 written = output_file.write((u8*)&num_samples, 4);
+      u32 written = out_file0.write((u8*)&num_samples, 4);
       Serial.printf("%d written (%u expected)\n", written, 4);
-      output_file.close();
+      out_file0.close();
 #endif
 
       Serial.println("Switch is turned off, stopping now");
@@ -238,8 +253,8 @@ void loop() {
       }
     }
 
-    Serial.print(data_front_buf[0].time);
-    Serial.printf(",%d,%d,%d,", data_front_buf[0].accel_x, data_front_buf[0].accel_y, data_front_buf[0].accel_z);
+    Serial.printf("%d,%u,", in_flight, data_front_buf[0].time);
+    Serial.printf(",%d,%d,%d,", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
       Serial.printf(",%.2f", averages0[i]);
@@ -249,8 +264,6 @@ void loop() {
       Serial.printf(",%.2f", averages1[i]);
     }
     Serial.println("");
-
-    last_time = micros();
   }
 }
 
@@ -451,16 +464,10 @@ void loop1() {
   i16 measure0 = 0;
   i16 measure1 = 0;
 
-  //u32 start = micros();
-
   // ADS0 measure
   {
     // Wait for DRDY  
     while (digitalRead(ADS0_DRDY_PIN) == HIGH);
-
-    //if (data_buf_pos == 0) {
-    //  Serial.printf("ADS0 DRDY done at %u\n", micros() - start);
-    //}
 
     SPI1.beginTransaction(ads_settings);
     digitalWrite(ADS0_CS_PIN, LOW);
@@ -484,18 +491,10 @@ void loop1() {
     SPI1.endTransaction();
   }
 
-  //if (data_buf_pos == 0) {
-  //  Serial.printf("ADS0 read done at %u\n", micros() - start);
-  //}
-
   // ADS1 measure
   {
     // Wait for DRDY  
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
-
-    //if (data_buf_pos == 0) {
-    //  Serial.printf("ADS1 DRDY done at %u\n", micros() - start);
-    //}
 
     SPI1.beginTransaction(ads_settings);
     digitalWrite(ADS1_CS_PIN, LOW);
@@ -519,11 +518,6 @@ void loop1() {
     SPI1.endTransaction();
   }
 
-  //if (data_buf_pos == 0) {
-  //  Serial.printf("ADS1 read done at %u\n", micros() - start);
-  //  Serial.println("=============================");
-  //}
-
   // Checking for new sample
   if (
     ads0_read_pin == 0 && ads1_read_pin == 0 &&
@@ -532,11 +526,22 @@ void loop1() {
     data_back_buf[data_buf_pos++] = { 0 };
     data_back_buf[data_buf_pos-1].time = micros();
 
-    accel_read_registers(
-      LSM6DSOX_OUTX_L_XL,
-      (uint8_t *)data_back_buf[data_buf_pos-1].accel,
-      6
-    );
+    accel_sample* accel = &data_back_buf[data_buf_pos-1].accel;
+
+    accel_read_registers(LSM6DSOX_OUTX_L_XL, (uint8_t *)accel, 6);
+
+    f32 accel_mag = sqrt(
+      (f32)accel->x * (f32)accel->x +
+      (f32)accel->y * (f32)accel->y +
+      (f32)accel->z * (f32)accel->z
+    ) * (8.0f / (f32)(1 << 15));
+
+    accel_mag_avg = (LAUNCH_FILTER) * accel_mag_avg + (1.0f - LAUNCH_FILTER) * accel_mag;
+    if (accel_mag_avg > LAUNCH_THRESHOLD) {
+      in_flight = true;
+      accel_mag_avg = 0;
+      flight_start = millis();
+    }
   }
 
   // Writing measures

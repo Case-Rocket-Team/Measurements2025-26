@@ -14,7 +14,7 @@ typedef float f32;
 #define FLASH_CS 17
 #define SWITCH_PIN 25
 
-#define IN_FILE_NAME "03-21-26-testing0000.mes"
+#define IN_FILE_NAME "pad-cycle-testing0001.mes"
 
 namespace mes {
   enum class types : u8 {
@@ -74,7 +74,7 @@ void setup() {
   in_file.read((u8*)(&header), 4);
 
   if (header.magic[0] != 'M' || header.magic[1] != 'E' || header.magic[2] != 'S') {
-    Serial.println("Invalid MES file");
+    Serial.printf("Invalid MES file %c %c %c\n", header.magic[0], header.magic[1], header.magic[2]);
     in_file.close();
     while (1);
   }

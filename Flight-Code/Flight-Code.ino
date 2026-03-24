@@ -3,14 +3,14 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 0
+#define WRITE_FILE 1
 
 #define TEST_MODE 1
 
 #if TEST_MODE
 #    define PAD_RECORD_TIME_MS (10 * 1000)
 #    define FLIGHT_RECORD_TIME_MS (30 * 1000)
-#    define LAUNCH_THRESHOLD 4.0f
+#    define LAUNCH_THRESHOLD 1.5f
 #    define LAUNCH_FILTER 0.9f
 #else
 #    define PAD_RECORD_TIME_MS (30 * 1000)
@@ -96,7 +96,7 @@ const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
-#define DATA_BUF_SIZE 128
+#define DATA_BUF_SIZE 512
 
 #define ADS0_NUM_GAUGES 8
 #define ADS1_NUM_GAUGES 6
@@ -132,6 +132,12 @@ sample* tmp_buf = NULL;
 sample* data_front_buf = NULL;
 sample* data_back_buf = NULL;
 
+bool in_flight = false;
+f32 accel_mag_avg = 0.0f;
+u32 flight_start = 0;
+
+u32 pad_swap_start = 0;
+
 /*
  /$$$$$$$$ /$$                       /$$            /$$$$$$                               
 | $$_____/|__/                      | $$           /$$__  $$                              
@@ -155,40 +161,28 @@ enum class mes_types : u8 {
 
 #define FLASH_CS 17
 
-#define SWITCH_PIN 25
-
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "03-21-26-testing"
+#define CUR_FILE_NAME "pad-cycle-testing"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
 #define FILE_NAME_SIZE (CUR_FILE_NAME_LEN + FILE_INDEX_DIGITS + FILE_EXT_LEN)
 
-void find_file_name(char file_name[FILE_NAME_SIZE]);
-
-void write_output_header(File& out_file);
-
 File out_file0;
 File out_file1;
-u32 num_samples = 0;
+File tmp_file;
+u32 num_samples0 = 0;
+u32 num_samples1 = 0;
 
-bool in_flight = false;
-f32 accel_mag_avg = 0.0f;
-u32 flight_start = 0;
+void init_files(void);
+void find_file_name(char file_name[FILE_NAME_SIZE]);
+void write_output_header(File& out_file);
 
 void setup() {
   Serial.begin(115200);
   while (!Serial);
 
-  pinMode(SWITCH_PIN, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
-
-  digitalWrite(LED_BUILTIN, digitalRead(SWITCH_PIN));
-
-  if (digitalRead(SWITCH_PIN) == 0) {
-    Serial.println("Switch is turned off, stopping now");
-    while (1);
-  }
 
 #if WRITE_FILE
   Serial.println("Initializing SD card...");
@@ -198,18 +192,9 @@ void setup() {
   }
   Serial.println("SD initialization done.");
 
-  char file_name[FILE_NAME_SIZE + 1] = { 0 };
-  find_file_name(file_name);
+  init_files();
 
-  Serial.printf("Creating file '%s'\n", file_name);
-
-  out_file0 = SD.open(file_name, FILE_WRITE);
-  if (!out_file0) {
-    Serial.println("Failed to create output file 0");
-    while (1);
-  }
-
-  write_output_header(out_file0);
+  pad_swap_start = millis();
 #endif
 }
 
@@ -217,7 +202,7 @@ void loop() {
   if (rp2040.fifo.available()) {
     rp2040.fifo.pop();
 
-    num_samples += DATA_BUF_SIZE;
+    num_samples0 += DATA_BUF_SIZE;
 
     u32 write_start = micros();
 
@@ -228,17 +213,6 @@ void loop() {
 #endif
 
     Serial.printf("Write took %u us\n", micros() - write_start);
-
-    if (digitalRead(SWITCH_PIN) == 0) {
-#if WRITE_FILE
-      u32 written = out_file0.write((u8*)&num_samples, 4);
-      Serial.printf("%d written (%u expected)\n", written, 4);
-      out_file0.close();
-#endif
-
-      Serial.println("Switch is turned off, stopping now");
-      while (1);
-    }
 
     f32 averages0[ADS0_NUM_GAUGES] = { 0 };
     f32 averages1[ADS1_NUM_GAUGES] = { 0 };
@@ -253,8 +227,9 @@ void loop() {
       }
     }
 
+#if TEST_MODE
     Serial.printf("%d,%u,", in_flight, data_front_buf[0].time);
-    Serial.printf(",%d,%d,%d,", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
+    Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
       Serial.printf(",%.2f", averages0[i]);
@@ -264,7 +239,66 @@ void loop() {
       Serial.printf(",%.2f", averages1[i]);
     }
     Serial.println("");
+#endif
+
+    if (in_flight) {
+      if (millis() - flight_start > FLIGHT_RECORD_TIME_MS) {
+        in_flight = false;
+        accel_mag_avg = 0.0f;
+        flight_start = 0;
+
+        out_file0.write((u8*)&num_samples0, 4);
+        out_file0.close();
+
+        out_file1.write((u8*)&num_samples1, 4);
+        out_file1.close();
+
+        init_files();
+      }
+    } else { // on pad
+      if (millis() - pad_swap_start > PAD_RECORD_TIME_MS) {
+        // Swap 
+        tmp_file = out_file0;
+        out_file0 = out_file1;
+        out_file1 = tmp_file;
+
+        out_file0.seek(0);
+        write_output_header(out_file0);
+
+        // Swap num samples
+        num_samples0 = num_samples0 ^ num_samples1;
+        num_samples1 = num_samples0 ^ num_samples1;
+        num_samples0 = num_samples0 ^ num_samples1;
+
+        pad_swap_start = millis();
+      }
+    }
   }
+}
+
+void init_files(void) {
+  char file_name[FILE_NAME_SIZE + 1] = { 0 };
+  find_file_name(file_name);
+
+  Serial.printf("Creating file '%s'\n", file_name);
+  out_file0 = SD.open(file_name, FILE_WRITE);
+  if (!out_file0) {
+    Serial.println("Failed to create output file 0");
+    while (1);
+  }
+
+  memset(file_name, 0, sizeof(file_name));
+  find_file_name(file_name);
+
+  Serial.printf("Creating file '%s'\n", file_name);
+  out_file1 = SD.open(file_name, FILE_WRITE);
+  if (!out_file0) {
+    Serial.println("Failed to create output file 1");
+    while (1);
+  }
+
+  write_output_header(out_file0);
+  write_output_header(out_file1);
 }
 
 void find_file_name(char file_name[FILE_NAME_SIZE + 1]) {
@@ -439,7 +473,7 @@ void setup1() {
   SPI1.begin();
 
   ads_init(ADS0_CS_PIN);
-  ads_init(ADS1_CS_PIN);
+  //ads_init(ADS1_CS_PIN);
 
   Wire.begin();
   Wire.setClock(1000000);
@@ -492,7 +526,7 @@ void loop1() {
   }
 
   // ADS1 measure
-  {
+  /*{
     // Wait for DRDY  
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
@@ -516,7 +550,7 @@ void loop1() {
 
     digitalWrite(ADS1_CS_PIN, HIGH);
     SPI1.endTransaction();
-  }
+  }*/
 
   // Checking for new sample
   if (
@@ -530,17 +564,19 @@ void loop1() {
 
     accel_read_registers(LSM6DSOX_OUTX_L_XL, (uint8_t *)accel, 6);
 
-    f32 accel_mag = sqrt(
-      (f32)accel->x * (f32)accel->x +
-      (f32)accel->y * (f32)accel->y +
-      (f32)accel->z * (f32)accel->z
-    ) * (8.0f / (f32)(1 << 15));
+    if (!in_flight) {
+      f32 accel_mag = sqrt(
+        (f32)accel->x * (f32)accel->x +
+        (f32)accel->y * (f32)accel->y +
+        (f32)accel->z * (f32)accel->z
+      ) * (8.0f / (f32)(1 << 15));
 
-    accel_mag_avg = (LAUNCH_FILTER) * accel_mag_avg + (1.0f - LAUNCH_FILTER) * accel_mag;
-    if (accel_mag_avg > LAUNCH_THRESHOLD) {
-      in_flight = true;
-      accel_mag_avg = 0;
-      flight_start = millis();
+      accel_mag_avg = (LAUNCH_FILTER) * accel_mag_avg + (1.0f - LAUNCH_FILTER) * accel_mag;
+      if (accel_mag_avg > LAUNCH_THRESHOLD) {
+        in_flight = true;
+        accel_mag_avg = 0;
+        flight_start = millis();
+      }
     }
   }
 

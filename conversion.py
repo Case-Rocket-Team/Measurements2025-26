@@ -54,7 +54,7 @@ for measurementNum in range(numGaugeMeasurements):
     gaugeVoltagesData.append([value * 5 / (2**16) for value in file[headerLine[measurementNum]].values.tolist()])
 
 # get all time values
-measurementTimes = file["time"].values.tolist()
+measurementTimes = [t * 1e-6 for t in file["time"].values.tolist()]
 
 # gauge measurement times for each gauge (by index) and the changes in measurement time for each measurement
 allTimeChanges = []
@@ -148,7 +148,7 @@ if hasAccel:
     axs[1].plot(accelTimes, accelY, label="Accel Y")
     axs[1].plot(accelTimes, accelZ, label="Accel Z")
 
-    axs[1].set_xlabel("Time")
+    axs[1].set_xlabel("Time (s)")
     axs[1].set_ylabel("Acceleration (g)")
     axs[1].legend()
 
@@ -165,9 +165,9 @@ for i in range(len(gauges)):
         index = gauges[i] * i + j
         gaugeAxes.plot(allGaugeMeasurementTimes[index], gaugeVoltages[index], label = f'ADC{i+1} Gauge{j+1}', marker='o', linestyle='-', markersize=1.5, color=f'C{index}')
     
-gaugeAxes.set_xlabel("Time")
+gaugeAxes.set_xlabel("Time (s)")
 gaugeAxes.set_ylabel("Voltage (V)")
-gaugeAxes.legend()
+gaugeAxes.legend(loc='lower right', bbox_to_anchor=(1.1, 0))
 
 plt.show()
 

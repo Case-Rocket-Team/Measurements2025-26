@@ -3,7 +3,7 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 1
+#define WRITE_FILE 0
 
 #define TEST_MODE 1
 
@@ -162,7 +162,7 @@ enum class mes_types : u8 {
 #define FLASH_CS 17
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "pad-cycle-testing"
+#define CUR_FILE_NAME "test-gauge-application"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -210,10 +210,11 @@ void loop() {
     u32 written = out_file0.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
     out_file0.flush();
     Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);
-#endif
 
     Serial.printf("Write took %u us\n", micros() - write_start);
+#endif
 
+#if TEST_MODE
     f32 averages0[ADS0_NUM_GAUGES] = { 0 };
     f32 averages1[ADS1_NUM_GAUGES] = { 0 };
 
@@ -227,7 +228,6 @@ void loop() {
       }
     }
 
-#if TEST_MODE
     Serial.printf("%d,%u,", in_flight, data_front_buf[0].time);
     Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
@@ -241,6 +241,7 @@ void loop() {
     Serial.println("");
 #endif
 
+#if WRITE_FILE
     if (in_flight) {
       if (millis() - flight_start > FLIGHT_RECORD_TIME_MS) {
         in_flight = false;
@@ -273,6 +274,7 @@ void loop() {
         pad_swap_start = millis();
       }
     }
+#endif
   }
 }
 
@@ -473,7 +475,7 @@ void setup1() {
   SPI1.begin();
 
   ads_init(ADS0_CS_PIN);
-  //ads_init(ADS1_CS_PIN);
+  ads_init(ADS1_CS_PIN);
 
   Wire.begin();
   Wire.setClock(1000000);
@@ -526,7 +528,7 @@ void loop1() {
   }
 
   // ADS1 measure
-  /*{
+  {
     // Wait for DRDY  
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
@@ -550,7 +552,7 @@ void loop1() {
 
     digitalWrite(ADS1_CS_PIN, HIGH);
     SPI1.endTransaction();
-  }*/
+  }
 
   // Checking for new sample
   if (

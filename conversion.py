@@ -128,9 +128,9 @@ for t0, t1 in zip(measurementTimes[:-1], measurementTimes[1:-2]):
     total_time_diff += t1 - t0
 
 avg_time_diff = total_time_diff / (len(measurementTimes) - 1)
-sampling_rate = 1.0 / (avg_time_diff * 1e-6)
+sampling_rate = 1.0 / (avg_time_diff)
 
-print(f"Average Time Diff  - {avg_time_diff:.2f} us")
+print(f"Average Time Diff  - {avg_time_diff * 1e6:.2f} us")
 print(f"Sampling Rate      - {sampling_rate:.2f} Hz")
 print(f"ADC0 Sampling Rate - {cycles[0] * sampling_rate:.2f} Hz")
 print(f"ADC1 Sampling Rate - {cycles[1] * sampling_rate:.2f} Hz")

@@ -14,7 +14,7 @@ typedef float f32;
 #define FLASH_CS 17
 #define SWITCH_PIN 25
 
-#define IN_FILE_NAME "pad-cycle-testing0001.mes"
+#define IN_FILE_NAME "test-gauge-application0000.mes"
 
 namespace mes {
   enum class types : u8 {

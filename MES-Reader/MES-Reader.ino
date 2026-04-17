@@ -11,7 +11,7 @@ typedef uint32_t u32;
 
 typedef float f32;
 
-#define FLASH_CS 17
+#define FLASH_CS 5
 #define SWITCH_PIN 25
 
 #define IN_FILE_NAME "test-gauge-application0000.mes"

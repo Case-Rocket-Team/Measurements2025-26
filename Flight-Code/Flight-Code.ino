@@ -42,6 +42,10 @@ typedef struct {
 #define ADS0_DRDY_PIN 19
 #define ADS1_DRDY_PIN 20
 
+#define BUZZER_PIN 25
+
+#define FLASH_CS_PIN 5
+
 enum class ads_cmd : u8 { 
   WAKEUP   = 0x00,
   RDATA    = 0x01,
@@ -91,7 +95,7 @@ enum class ads_reg : u8 {
 
 const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
-#define ADS_PGA 0b001
+#define ADS_PGA 0b010
 #define ADS_GAIN (1 << ADS_PGA)
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
@@ -99,10 +103,10 @@ const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 #define DATA_BUF_SIZE 512
 
 #define ADS0_NUM_GAUGES 8
-#define ADS1_NUM_GAUGES 6
+#define ADS1_NUM_GAUGES 8
 
-#define ADS0_CYCLES_PER_SAMPLE 3
-#define ADS1_CYCLES_PER_SAMPLE 4
+#define ADS0_CYCLES_PER_SAMPLE 1
+#define ADS1_CYCLES_PER_SAMPLE 1
 
 static_assert(
   ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE ==
@@ -126,6 +130,8 @@ struct sample {
   accel_sample accel;
 };
 #pragma pack(pop)
+
+bool sd_okay = !WRITE_FILE;
 
 // Used to swap the front and back buffers
 sample* tmp_buf = NULL;
@@ -159,8 +165,6 @@ enum class mes_types : u8 {
   F32 = 6
 };
 
-#define FLASH_CS 17
-
 #define FILE_INDEX_DIGITS 4
 #define CUR_FILE_NAME "test-gauge-application"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
@@ -186,11 +190,13 @@ void setup() {
 
 #if WRITE_FILE
   Serial.println("Initializing SD card...");
-  if (!SD.begin(FLASH_CS, SPI_FULL_SPEED)) {
+  if (!SD.begin(FLASH_CS_PIN, SPI_FULL_SPEED)) {
     Serial.println("SD initialization failed!");
     while (1);
   }
   Serial.println("SD initialization done.");
+
+  sd_okay = true;
 
   init_files();
 
@@ -204,9 +210,8 @@ void loop() {
 
     num_samples0 += DATA_BUF_SIZE;
 
-    u32 write_start = micros();
-
 #if WRITE_FILE
+    u32 write_start = micros();
     u32 written = out_file0.write((u8*)(data_front_buf), sizeof(sample) * DATA_BUF_SIZE);
     out_file0.flush();
     Serial.printf("%d written (%u expected) | ", written, sizeof(sample) * DATA_BUF_SIZE);
@@ -228,16 +233,16 @@ void loop() {
       }
     }
 
-    Serial.printf("%d,%u,", in_flight, data_front_buf[0].time);
-    Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
+    //Serial.printf("%u,", data_front_buf[0].time);
+    //Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%.2f", averages0[i]);
+      Serial.printf("%2.3f ", averages0[i]);
     }
-    for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
+    /*for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
       averages1[i] /= (f32)DATA_BUF_SIZE;
       Serial.printf(",%.2f", averages1[i]);
-    }
+    }*/
     Serial.println("");
 #endif
 
@@ -442,13 +447,15 @@ void write_output_header(File& out_file) {
 */
 
 // Sets up datarate, multiplexer, gain, etc.
-static void ads_init(u8 ads_cs_pin);
+static bool ads_init(u8 ads_cs_pin);
 
 static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg);
 static void ads_write_reg(u8 ads_cs_pin, ads_reg reg, u8 val);
 static void ads_send_cmd(u8 ads_cs_pin, ads_cmd cmd);
 
 static int accel_read_registers(uint8_t address, uint8_t *data, size_t length);
+static int accel_read_register(uint8_t address);
+static int accel_write_register(uint8_t address, uint8_t value);
 
 void setup1() {
   data_front_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
@@ -469,18 +476,41 @@ void setup1() {
   pinMode(ADS1_CS_PIN, OUTPUT);
   pinMode(ADS1_DRDY_PIN, INPUT);
 
+  pinMode(BUZZER_PIN, OUTPUT);
+
   digitalWrite(ADS0_CS_PIN, HIGH);
   digitalWrite(ADS1_CS_PIN, HIGH);
 
   SPI1.begin();
 
-  ads_init(ADS0_CS_PIN);
-  ads_init(ADS1_CS_PIN);
+  bool devices_working = true;
+
+  if (!ads_init(ADS0_CS_PIN)) { devices_working = false; }
+  //ads_init(ADS1_CS_PIN);
 
   Wire.begin();
   Wire.setClock(1000000);
   // Sets accelerometer frequency
   accel_write_register(LSM6DSOX_CTRL1_XL, 0b01011110);
+
+  if (!(
+    accel_read_register(LSM6DSOX_WHO_AM_I_REG) == 0x6C ||
+    accel_read_register(LSM6DSOX_WHO_AM_I_REG) == 0x69
+  )) {
+    devices_working = false;
+  }
+
+  if (!sd_okay) { devices_working = false; }
+
+  if (!devices_working) {
+    Serial.println("Failed to initialize devices!");
+    while (1);
+  }
+
+  for (u32 i = 0; i < (TEST_MODE ? 10 : 40); i++) {
+    tone(BUZZER_PIN, 2000, 200);
+    delay(400);
+  }
 }
 
 u32 data_buf_pos = 0;
@@ -528,7 +558,7 @@ void loop1() {
   }
 
   // ADS1 measure
-  {
+  /*{
     // Wait for DRDY  
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
@@ -552,7 +582,7 @@ void loop1() {
 
     digitalWrite(ADS1_CS_PIN, HIGH);
     SPI1.endTransaction();
-  }
+  }*/
 
   // Checking for new sample
   if (
@@ -614,7 +644,7 @@ void loop1() {
   ads1_cycle %= ADS1_CYCLES_PER_SAMPLE;
 }
 
-static void ads_init(u8 ads_cs_pin) {
+static bool ads_init(u8 ads_cs_pin) {
   ads_send_cmd(ads_cs_pin, ads_cmd::RESET);
   delay(100);
   ads_write_reg(ads_cs_pin, ads_reg::MUX, 0b00001000);
@@ -623,6 +653,13 @@ static void ads_init(u8 ads_cs_pin) {
   delay(100);
   ads_send_cmd(ads_cs_pin, ads_cmd::SELFCAL);
   delay(200);
+
+  // Checking registers
+  return 
+    (((ads_read_reg(ads_cs_pin, ads_reg::STATUS) & 0b1110) >> 1) == 0b000) && 
+    (ads_read_reg(ads_cs_pin, ads_reg::MUX) == 0b00001000) &&
+    (ads_read_reg(ads_cs_pin, ads_reg::ADCON) == (0b00100000 | ADS_PGA))
+  ;
 }
 
 static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg) {
@@ -690,6 +727,16 @@ static int accel_read_registers(uint8_t address, uint8_t *data, size_t length) {
     }
 
     return 1;
+}
+
+static int accel_read_register(uint8_t address) {
+  u8 value = 0;
+
+  if (accel_read_registers(address, &value, 1) != 1) {
+    return -1;
+  }
+
+  return value;
 }
 
 static int accel_write_register(uint8_t address, uint8_t value) {

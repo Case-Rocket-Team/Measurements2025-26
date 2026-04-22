@@ -49,9 +49,8 @@ numGaugeMeasurements = gauges[0] * cycles[0] + gauges[1] * cycles[1]
 # get all gauge values
 gaugeVoltagesData = []
 for measurementNum in range(numGaugeMeasurements):
-
     # get gauge data and convert to voltage
-    gaugeVoltagesData.append([value * 5 / (2**16) for value in file[headerLine[measurementNum]].values.tolist()])
+    gaugeVoltagesData.append([value * 5 / (2**17) for value in file[headerLine[measurementNum]].values.tolist()])
 
 # get all time values
 measurementTimes = [t * 1e-6 for t in file["time"].values.tolist()]

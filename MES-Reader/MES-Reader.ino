@@ -12,9 +12,8 @@ typedef uint32_t u32;
 typedef float f32;
 
 #define FLASH_CS 5
-#define SWITCH_PIN 25
 
-#define IN_FILE_NAME "test-gauge-application0000.mes"
+#define IN_FILE_NAME "04-21-26-test0005.mes"
 
 namespace mes {
   enum class types : u8 {
@@ -60,11 +59,6 @@ void setup() {
 
     root.close();
   }
-  
-  Serial.println("Awaiting switch");
-
-  pinMode(SWITCH_PIN, INPUT);
-  while (digitalRead(SWITCH_PIN));
 
   File in_file = SD.open(IN_FILE_NAME, FILE_READ);
 

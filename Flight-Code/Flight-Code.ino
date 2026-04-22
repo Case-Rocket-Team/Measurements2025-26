@@ -3,7 +3,7 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 0
+#define WRITE_FILE 1
 
 #define TEST_MODE 1
 
@@ -102,11 +102,14 @@ const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
 #define DATA_BUF_SIZE 512
 
-#define ADS0_NUM_GAUGES 8
-#define ADS1_NUM_GAUGES 8
+#define ADS0_NUM_GAUGES 4
+#define ADS1_NUM_GAUGES 4
 
 #define ADS0_CYCLES_PER_SAMPLE 1
 #define ADS1_CYCLES_PER_SAMPLE 1
+
+#define ADS0_GAUGE_OFFSET 2
+#define ADS1_GAUGE_OFFSET 0
 
 static_assert(
   ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE ==
@@ -166,7 +169,7 @@ enum class mes_types : u8 {
 };
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "test-gauge-application"
+#define CUR_FILE_NAME "04-21-26-test"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -228,22 +231,23 @@ void loop() {
         averages0[j] += (f32)data_front_buf[i].measures0[j] * ads_conversion;
       }
 
+
       for (u32 j = 0; j < ADS1_NUM_GAUGES; j++) {
         averages1[j] += (f32)data_front_buf[i].measures1[j] * ads_conversion;
       }
     }
 
-    //Serial.printf("%u,", data_front_buf[0].time);
-    //Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
+    Serial.printf("%u,%d,", data_front_buf[0].time, in_flight);
+    Serial.printf("%d,%d,%d,", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf("%2.3f ", averages0[i]);
+      Serial.printf("%2.3f,", averages0[i]);
     }
     /*for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
       averages1[i] /= (f32)DATA_BUF_SIZE;
       Serial.printf(",%.2f", averages1[i]);
     }*/
-    Serial.println("");
+    Serial.println("0.0,1.25");
 #endif
 
 #if WRITE_FILE
@@ -259,22 +263,29 @@ void loop() {
         out_file1.write((u8*)&num_samples1, 4);
         out_file1.close();
 
+#if TEST_MODE
+        while (1);
+#endif
+
         init_files();
       }
     } else { // on pad
       if (millis() - pad_swap_start > PAD_RECORD_TIME_MS) {
-        // Swap 
+        out_file0.flush();
+        out_file1.flush();
+
+        // Swap file pointers
         tmp_file = out_file0;
         out_file0 = out_file1;
         out_file1 = tmp_file;
 
+        num_samples1 = num_samples0;
+        num_samples0 = 0;
+
+        out_file0.truncate(0);
         out_file0.seek(0);
         write_output_header(out_file0);
 
-        // Swap num samples
-        num_samples0 = num_samples0 ^ num_samples1;
-        num_samples1 = num_samples0 ^ num_samples1;
-        num_samples0 = num_samples0 ^ num_samples1;
 
         pad_swap_start = millis();
       }
@@ -500,7 +511,7 @@ void setup1() {
     devices_working = false;
   }
 
-  if (!sd_okay) { devices_working = false; }
+  delay(2000);
 
   if (!devices_working) {
     Serial.println("Failed to initialize devices!");
@@ -540,7 +551,7 @@ void loop1() {
 
     SPI1.transfer((u8)ads_cmd::WREG | (u8)ads_reg::MUX);
     SPI1.transfer(0x00);
-    SPI1.transfer((ads0_mux_pin << 4) | 0b1000);
+    SPI1.transfer(((ads0_mux_pin + ADS0_GAUGE_OFFSET) << 4) | 0b1000);
     SPI1.transfer((u8)ads_cmd::SYNC);
     // Rounded up from 3.125
     delayMicroseconds(4);
@@ -567,7 +578,7 @@ void loop1() {
 
     SPI1.transfer((u8)ads_cmd::WREG | (u8)ads_reg::MUX);
     SPI1.transfer(0x00);
-    SPI1.transfer((ads1_mux_pin << 4) | 0b1000);
+    SPI1.transfer(((ads1_mux_pin + ADS1_GAUGE_OFFSET) << 4) | 0b1000);
     SPI1.transfer((u8)ads_cmd::SYNC);
     // Rounded up from 3.125
     delayMicroseconds(4);

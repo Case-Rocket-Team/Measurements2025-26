@@ -13,7 +13,7 @@ typedef float f32;
 
 #define FLASH_CS 5
 
-#define IN_FILE_NAME "04-21-26-test0005.mes"
+#define IN_FILE_NAME "beep-battery-test0005.mes"
 
 namespace mes {
   enum class types : u8 {
@@ -108,7 +108,7 @@ void setup() {
 
   in_file.seek(sample_start_pos);
 
-  for (u32 i = 0; i < num_samples; i++) {
+  for (u32 i = 0; i < num_samples && in_file.position() < in_file.size(); i++) {
     for (u32 j = 0; j < header.num_fields; j++) {
       if ((i % fields[j].freq) == 0) {
         switch (fields[j].data_type) {

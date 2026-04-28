@@ -3,7 +3,7 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 1
+#define WRITE_FILE 0
 
 #define TEST_MODE 1
 
@@ -38,7 +38,7 @@ typedef struct {
 #define SPI1_SCK_PIN 26
 
 #define ADS0_CS_PIN 21
-#define ADS1_CS_PIN 5
+#define ADS1_CS_PIN 18
 #define ADS0_DRDY_PIN 19
 #define ADS1_DRDY_PIN 20
 
@@ -109,7 +109,7 @@ const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 #define ADS1_CYCLES_PER_SAMPLE 1
 
 #define ADS0_GAUGE_OFFSET 2
-#define ADS1_GAUGE_OFFSET 0
+#define ADS1_GAUGE_OFFSET 2
 
 static_assert(
   ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE ==
@@ -147,6 +147,14 @@ u32 flight_start = 0;
 
 u32 pad_swap_start = 0;
 
+void beep(u32 n, u32 len, u32 pause) {
+  for (u32 i = 0; i < n; i++) {
+    #warning CHANGE FREQ BACK
+    tone(BUZZER_PIN, 440, len);
+    delay(len + pause);
+  }
+}
+
 /*
  /$$$$$$$$ /$$                       /$$            /$$$$$$                               
 | $$_____/|__/                      | $$           /$$__  $$                              
@@ -169,7 +177,7 @@ enum class mes_types : u8 {
 };
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "04-21-26-test"
+#define CUR_FILE_NAME "beep-battery-test"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -187,7 +195,6 @@ void write_output_header(File& out_file);
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -238,16 +245,16 @@ void loop() {
     }
 
     Serial.printf("%u,%d,", data_front_buf[0].time, in_flight);
-    Serial.printf("%d,%d,%d,", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
+    Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
     for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf("%2.3f,", averages0[i]);
+      Serial.printf(",%6.3f", averages0[i]);
     }
-    /*for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
+    for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
       averages1[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%.2f", averages1[i]);
-    }*/
-    Serial.println("0.0,1.25");
+      Serial.printf(",%6.3f", averages1[i]);
+    }
+    Serial.println("");
 #endif
 
 #if WRITE_FILE
@@ -262,6 +269,8 @@ void loop() {
 
         out_file1.write((u8*)&num_samples1, 4);
         out_file1.close();
+
+        beep(2, 250, 250);
 
 #if TEST_MODE
         while (1);
@@ -285,7 +294,6 @@ void loop() {
         out_file0.truncate(0);
         out_file0.seek(0);
         write_output_header(out_file0);
-
 
         pad_swap_start = millis();
       }
@@ -494,10 +502,27 @@ void setup1() {
 
   SPI1.begin();
 
-  bool devices_working = true;
+  delay(1000);
 
-  if (!ads_init(ADS0_CS_PIN)) { devices_working = false; }
-  //ads_init(ADS1_CS_PIN);
+  bool devices_working = true;
+  
+  Serial.println("");
+  Serial.println("Initializing ADS0");
+  if (!ads_init(ADS0_CS_PIN)) {
+    Serial.println("ADS0 Failed");
+    devices_working = false; 
+  } else {
+    Serial.println("ADS0 Works");
+  }
+
+  Serial.println("");
+  Serial.println("Initializing ADS1");
+  if (!ads_init(ADS1_CS_PIN)) {
+    Serial.println("ADS1 Failed");
+    devices_working = false; 
+  } else {
+    Serial.println("ADS1 Works");
+  }
 
   Wire.begin();
   Wire.setClock(1000000);
@@ -511,17 +536,12 @@ void setup1() {
     devices_working = false;
   }
 
-  delay(2000);
-
   if (!devices_working) {
     Serial.println("Failed to initialize devices!");
-    while (1);
+    //while (1);
   }
 
-  for (u32 i = 0; i < (TEST_MODE ? 10 : 40); i++) {
-    tone(BUZZER_PIN, 2000, 200);
-    delay(400);
-  }
+  //beep((TEST_MODE ? 5 : 40), 200, 200);
 }
 
 u32 data_buf_pos = 0;
@@ -569,8 +589,8 @@ void loop1() {
   }
 
   // ADS1 measure
-  /*{
-    // Wait for DRDY  
+  {
+    // Wait for DRDY 
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
     SPI1.beginTransaction(ads_settings);
@@ -593,7 +613,7 @@ void loop1() {
 
     digitalWrite(ADS1_CS_PIN, HIGH);
     SPI1.endTransaction();
-  }*/
+  }
 
   // Checking for new sample
   if (
@@ -619,6 +639,8 @@ void loop1() {
         in_flight = true;
         accel_mag_avg = 0;
         flight_start = millis();
+
+        beep(1, 500, 0);
       }
     }
   }
@@ -664,6 +686,29 @@ static bool ads_init(u8 ads_cs_pin) {
   delay(100);
   ads_send_cmd(ads_cs_pin, ads_cmd::SELFCAL);
   delay(200);
+
+  u8 status = ads_read_reg(ads_cs_pin, ads_reg::STATUS);
+  u8 mux = ads_read_reg(ads_cs_pin, ads_reg::MUX);
+  u8 adcon = ads_read_reg(ads_cs_pin, ads_reg::ADCON);
+
+  Serial.print("STATUS: 0b");
+  for (u8 i = 0; i < 8; i++) {
+    u8 bit = (status >> i) & 1;
+    Serial.printf("%c", bit ? '1' : '0');
+  }
+  Serial.println("");
+  Serial.print("MUX   : 0b");
+  for (u8 i = 0; i < 8; i++) {
+    u8 bit = (mux >> i) & 1;
+    Serial.printf("%c", bit ? '1' : '0');
+  }
+  Serial.println("");
+  Serial.print("ADCON : 0b");
+  for (u8 i = 0; i < 8; i++) {
+    u8 bit = (adcon >> i) & 1;
+    Serial.printf("%c", bit ? '1' : '0');
+  }
+  Serial.println("");
 
   // Checking registers
   return 

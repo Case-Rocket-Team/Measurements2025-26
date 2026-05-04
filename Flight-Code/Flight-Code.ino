@@ -10,7 +10,7 @@
 #if TEST_MODE
 #    define PAD_RECORD_TIME_MS (10 * 1000)
 #    define FLIGHT_RECORD_TIME_MS (30 * 1000)
-#    define LAUNCH_THRESHOLD 1.5f
+#    define LAUNCH_THRESHOLD 2.5f
 #    define LAUNCH_FILTER 0.9f
 #else
 #    define PAD_RECORD_TIME_MS (30 * 1000)
@@ -37,10 +37,12 @@ typedef struct {
 #define SPI1_COPI_PIN 27
 #define SPI1_SCK_PIN 26
 
-#define ADS0_CS_PIN 21
+#define ADS0_CS_PIN 20
 #define ADS1_CS_PIN 18
 #define ADS0_DRDY_PIN 19
-#define ADS1_DRDY_PIN 20
+#define ADS1_DRDY_PIN 17
+
+#define ADS_TRANSISTOR 29
 
 #define BUZZER_PIN 25
 
@@ -100,15 +102,15 @@ const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
-#define DATA_BUF_SIZE 512
+#define DATA_BUF_SIZE 256
 
-#define ADS0_NUM_GAUGES 4
-#define ADS1_NUM_GAUGES 4
+#define ADS0_NUM_GAUGES 8
+#define ADS1_NUM_GAUGES 6
 
-#define ADS0_CYCLES_PER_SAMPLE 1
-#define ADS1_CYCLES_PER_SAMPLE 1
+#define ADS0_CYCLES_PER_SAMPLE 3
+#define ADS1_CYCLES_PER_SAMPLE 4
 
-#define ADS0_GAUGE_OFFSET 2
+#define ADS0_GAUGE_OFFSET 0
 #define ADS1_GAUGE_OFFSET 2
 
 static_assert(
@@ -134,8 +136,6 @@ struct sample {
 };
 #pragma pack(pop)
 
-bool sd_okay = !WRITE_FILE;
-
 // Used to swap the front and back buffers
 sample* tmp_buf = NULL;
 sample* data_front_buf = NULL;
@@ -149,8 +149,7 @@ u32 pad_swap_start = 0;
 
 void beep(u32 n, u32 len, u32 pause) {
   for (u32 i = 0; i < n; i++) {
-    #warning CHANGE FREQ BACK
-    tone(BUZZER_PIN, 440, len);
+    tone(BUZZER_PIN, 2000, len);
     delay(len + pause);
   }
 }
@@ -205,8 +204,6 @@ void setup() {
     while (1);
   }
   Serial.println("SD initialization done.");
-
-  sd_okay = true;
 
   init_files();
 
@@ -476,6 +473,9 @@ static int accel_read_registers(uint8_t address, uint8_t *data, size_t length);
 static int accel_read_register(uint8_t address);
 static int accel_write_register(uint8_t address, uint8_t value);
 
+bool ads0_good = true;
+bool ads1_good = true;
+
 void setup1() {
   data_front_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
   data_back_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
@@ -495,6 +495,8 @@ void setup1() {
   pinMode(ADS1_CS_PIN, OUTPUT);
   pinMode(ADS1_DRDY_PIN, INPUT);
 
+  pinMode(ADS_TRANSISTOR, OUTPUT);
+
   pinMode(BUZZER_PIN, OUTPUT);
 
   digitalWrite(ADS0_CS_PIN, HIGH);
@@ -506,42 +508,53 @@ void setup1() {
 
   bool devices_working = true;
   
+  digitalWrite(ADS_TRANSISTOR, LOW);
   Serial.println("");
   Serial.println("Initializing ADS0");
   if (!ads_init(ADS0_CS_PIN)) {
     Serial.println("ADS0 Failed");
     devices_working = false; 
+    ads0_good = false;
   } else {
     Serial.println("ADS0 Works");
   }
 
+  digitalWrite(ADS_TRANSISTOR, HIGH);
   Serial.println("");
   Serial.println("Initializing ADS1");
   if (!ads_init(ADS1_CS_PIN)) {
     Serial.println("ADS1 Failed");
     devices_working = false; 
+    ads1_good = false;
   } else {
     Serial.println("ADS1 Works");
   }
 
   Wire.begin();
   Wire.setClock(1000000);
-  // Sets accelerometer frequency
-  accel_write_register(LSM6DSOX_CTRL1_XL, 0b01011110);
-
   if (!(
     accel_read_register(LSM6DSOX_WHO_AM_I_REG) == 0x6C ||
     accel_read_register(LSM6DSOX_WHO_AM_I_REG) == 0x69
   )) {
     devices_working = false;
+    Serial.println("IMU Failed");
   }
 
-  if (!devices_working) {
+  // Sets accelerometer frequency
+  accel_write_register(LSM6DSOX_CTRL1_XL, 0b01011110);
+
+  if (devices_working) {
+    beep((TEST_MODE ? 5 : 40), 200, 200);
+  } else {
     Serial.println("Failed to initialize devices!");
-    //while (1);
   }
 
-  //beep((TEST_MODE ? 5 : 40), 200, 200);
+#if TEST_MODE
+  if (!ads0_good && !ads1_good) {
+    while(1);
+  }
+#endif
+
 }
 
 u32 data_buf_pos = 0;
@@ -562,7 +575,8 @@ void loop1() {
   i16 measure1 = 0;
 
   // ADS0 measure
-  {
+  digitalWrite(ADS_TRANSISTOR, LOW);
+  if (ads0_good) {
     // Wait for DRDY  
     while (digitalRead(ADS0_DRDY_PIN) == HIGH);
 
@@ -589,7 +603,8 @@ void loop1() {
   }
 
   // ADS1 measure
-  {
+  digitalWrite(ADS_TRANSISTOR, HIGH);
+  if (ads1_good) {
     // Wait for DRDY 
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
@@ -678,7 +693,7 @@ void loop1() {
 }
 
 static bool ads_init(u8 ads_cs_pin) {
-  ads_send_cmd(ads_cs_pin, ads_cmd::RESET);
+  //ads_send_cmd(ads_cs_pin, ads_cmd::RESET);
   delay(100);
   ads_write_reg(ads_cs_pin, ads_reg::MUX, 0b00001000);
   delay(100);
@@ -693,28 +708,28 @@ static bool ads_init(u8 ads_cs_pin) {
 
   Serial.print("STATUS: 0b");
   for (u8 i = 0; i < 8; i++) {
-    u8 bit = (status >> i) & 1;
+    u8 bit = (status >> (7-i)) & 1;
     Serial.printf("%c", bit ? '1' : '0');
   }
   Serial.println("");
   Serial.print("MUX   : 0b");
   for (u8 i = 0; i < 8; i++) {
-    u8 bit = (mux >> i) & 1;
+    u8 bit = (mux >> (7-i)) & 1;
     Serial.printf("%c", bit ? '1' : '0');
   }
   Serial.println("");
   Serial.print("ADCON : 0b");
   for (u8 i = 0; i < 8; i++) {
-    u8 bit = (adcon >> i) & 1;
+    u8 bit = (adcon >> (7-i)) & 1;
     Serial.printf("%c", bit ? '1' : '0');
   }
   Serial.println("");
 
   // Checking registers
   return 
-    (((ads_read_reg(ads_cs_pin, ads_reg::STATUS) & 0b1110) >> 1) == 0b000) && 
-    (ads_read_reg(ads_cs_pin, ads_reg::MUX) == 0b00001000) &&
-    (ads_read_reg(ads_cs_pin, ads_reg::ADCON) == (0b00100000 | ADS_PGA))
+    (((status & 0b1110) >> 1) == 0b000) && 
+    (mux == 0b00001000) &&
+    (adcon == (0b00100000 | ADS_PGA))
   ;
 }
 
@@ -722,6 +737,7 @@ static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg) {
   SPI1.beginTransaction(ads_settings);
 
   digitalWrite(ads_cs_pin, LOW);
+  delayMicroseconds(10);
 
   SPI1.transfer((u8)ads_cmd::RREG | (u8)reg);
   SPI1.transfer(0x00);
@@ -730,6 +746,7 @@ static u8 ads_read_reg(u8 ads_cs_pin, ads_reg reg) {
 
   u8 out = SPI1.transfer(0xff);
 
+  delayMicroseconds(10);
   digitalWrite(ads_cs_pin, HIGH);
 
   SPI1.endTransaction();
@@ -741,11 +758,13 @@ static void ads_write_reg(u8 ads_cs_pin, ads_reg reg, u8 val) {
   SPI1.beginTransaction(ads_settings);
 
   digitalWrite(ads_cs_pin, LOW);
+  delayMicroseconds(10);
 
   SPI1.transfer((u8)ads_cmd::WREG | (u8)reg);
   SPI1.transfer(0x00);
   SPI1.transfer(val);
 
+  delayMicroseconds(10);
   digitalWrite(ads_cs_pin, HIGH);
 
   SPI1.endTransaction();
@@ -757,9 +776,9 @@ static void ads_send_cmd(u8 ads_cs_pin, ads_cmd cmd) {
   digitalWrite(ads_cs_pin, LOW);
 
   // TODO: Test if these delays are really necessary
-  delayMicroseconds(5);
+  delayMicroseconds(10);
   SPI1.transfer((u8)cmd);
-  delayMicroseconds(5);
+  delayMicroseconds(10);
 
   digitalWrite(ads_cs_pin, HIGH);
 

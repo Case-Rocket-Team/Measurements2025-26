@@ -10,7 +10,7 @@ else:
     # Default file to open if no other inputs are used
     fileName = r"G:\Shared drives\Case Rocket Team\2025 - 2026\26D - Measurements Subsystem\6. Data\03-03-2026testing0000.csv"
 
-file = pd.read_csv(fileName, delimiter=",")
+file = pd.read_csv(fileName, delimiter=",", on_bad_lines="warn")
 
 hasAccel = False
 

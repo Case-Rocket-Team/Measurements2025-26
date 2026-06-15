@@ -13,7 +13,7 @@ typedef float f32;
 
 #define FLASH_CS 5
 
-#define IN_FILE_NAME "beep-battery-test0005.mes"
+#define IN_FILE_NAME "pre-comp-tests0000.mes"
 
 namespace mes {
   enum class types : u8 {
@@ -161,7 +161,7 @@ void setup() {
       } else {
         Serial.print("\n");
         Serial.flush();
-        delayMicroseconds(750);
+        delay(1);
       }
     }
   }

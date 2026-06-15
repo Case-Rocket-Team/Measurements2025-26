@@ -3,19 +3,19 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 0
+#define WRITE_FILE 1
 
 #define TEST_MODE 1
 
 #if TEST_MODE
 #    define PAD_RECORD_TIME_MS (10 * 1000)
 #    define FLIGHT_RECORD_TIME_MS (30 * 1000)
-#    define LAUNCH_THRESHOLD 2.5f
+#    define LAUNCH_THRESHOLD 1.5f
 #    define LAUNCH_FILTER 0.9f
 #else
 #    define PAD_RECORD_TIME_MS (30 * 1000)
 #    define FLIGHT_RECORD_TIME_MS (10 * 60 * 1000)
-#    define LAUNCH_THRESHOLD 7.5f
+#    define LAUNCH_THRESHOLD 7.0f
 #    define LAUNCH_FILTER 0.9f
 #endif
 
@@ -102,7 +102,7 @@ const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
-#define DATA_BUF_SIZE 256
+#define DATA_BUF_SIZE 512
 
 #define ADS0_NUM_GAUGES 8
 #define ADS1_NUM_GAUGES 6
@@ -149,7 +149,7 @@ u32 pad_swap_start = 0;
 
 void beep(u32 n, u32 len, u32 pause) {
   for (u32 i = 0; i < n; i++) {
-    tone(BUZZER_PIN, 2000, len);
+    tone(BUZZER_PIN, 1000, len);
     delay(len + pause);
   }
 }
@@ -176,7 +176,7 @@ enum class mes_types : u8 {
 };
 
 #define FILE_INDEX_DIGITS 4
-#define CUR_FILE_NAME "beep-battery-test"
+#define CUR_FILE_NAME "pre-comp-tests"
 #define CUR_FILE_NAME_LEN (sizeof(CUR_FILE_NAME) - 1)
 #define FILE_EXT ".mes"
 #define FILE_EXT_LEN (sizeof(FILE_EXT) - 1)
@@ -194,8 +194,6 @@ void write_output_header(File& out_file);
 
 void setup() {
   Serial.begin(115200);
-
-  pinMode(LED_BUILTIN, OUTPUT);
 
 #if WRITE_FILE
   Serial.println("Initializing SD card...");
@@ -267,9 +265,9 @@ void loop() {
         out_file1.write((u8*)&num_samples1, 4);
         out_file1.close();
 
+#if TEST_MODE
         beep(2, 250, 250);
 
-#if TEST_MODE
         while (1);
 #endif
 
@@ -655,7 +653,9 @@ void loop1() {
         accel_mag_avg = 0;
         flight_start = millis();
 
+#if TEST_MODE
         beep(1, 500, 0);
+#endif
       }
     }
   }
@@ -706,24 +706,28 @@ static bool ads_init(u8 ads_cs_pin) {
   u8 mux = ads_read_reg(ads_cs_pin, ads_reg::MUX);
   u8 adcon = ads_read_reg(ads_cs_pin, ads_reg::ADCON);
 
+#if TEST_MODE
   Serial.print("STATUS: 0b");
   for (u8 i = 0; i < 8; i++) {
     u8 bit = (status >> (7-i)) & 1;
     Serial.printf("%c", bit ? '1' : '0');
   }
   Serial.println("");
+
   Serial.print("MUX   : 0b");
   for (u8 i = 0; i < 8; i++) {
     u8 bit = (mux >> (7-i)) & 1;
     Serial.printf("%c", bit ? '1' : '0');
   }
   Serial.println("");
+
   Serial.print("ADCON : 0b");
   for (u8 i = 0; i < 8; i++) {
     u8 bit = (adcon >> (7-i)) & 1;
     Serial.printf("%c", bit ? '1' : '0');
   }
   Serial.println("");
+#endif
 
   // Checking registers
   return 

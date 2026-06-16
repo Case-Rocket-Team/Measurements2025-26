@@ -60,6 +60,8 @@ void setup() {
     root.close();
   }
 
+  delay(8*1000);
+
   File in_file = SD.open(IN_FILE_NAME, FILE_READ);
 
   //Serial.printf("File is %u bytes in size\n", in_file.size());

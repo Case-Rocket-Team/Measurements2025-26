@@ -3,7 +3,7 @@
 #include <SD.h>
 #include <Wire.h>
 
-#define WRITE_FILE 1
+#define WRITE_FILE 0
 
 #define TEST_MODE 1
 
@@ -102,15 +102,15 @@ const SPISettings ads_settings(1920000, MSBFIRST, SPI_MODE1);
 
 const float ads_conversion = (1.0f / ADS_GAIN) * 5.0f / 32768.0f;
 
-#define DATA_BUF_SIZE 512
+#define DATA_BUF_SIZE 2048
 
-#define ADS0_NUM_GAUGES 8
-#define ADS1_NUM_GAUGES 6
+#define ADS0_NUM_GAUGES 6
+#define ADS1_NUM_GAUGES 0
 
-#define ADS0_CYCLES_PER_SAMPLE 3
-#define ADS1_CYCLES_PER_SAMPLE 4
+#define ADS0_CYCLES_PER_SAMPLE 0
+#define ADS1_CYCLES_PER_SAMPLE 0
 
-#define ADS0_GAUGE_OFFSET 0
+#define ADS0_GAUGE_OFFSET 2
 #define ADS1_GAUGE_OFFSET 2
 
 static_assert(
@@ -130,7 +130,7 @@ union accel_sample {
 
 struct sample {
   u32 time;
-  i16 measures0[ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE];
+  //i16 measures0[ADS0_NUM_GAUGES * ADS0_CYCLES_PER_SAMPLE];
   i16 measures1[ADS1_NUM_GAUGES * ADS1_CYCLES_PER_SAMPLE];
   accel_sample accel;
 };
@@ -225,13 +225,13 @@ void loop() {
 #endif
 
 #if TEST_MODE
-    f32 averages0[ADS0_NUM_GAUGES] = { 0 };
+    //f32 averages0[ADS0_NUM_GAUGES] = { 0 };
     f32 averages1[ADS1_NUM_GAUGES] = { 0 };
 
     for (u32 i = 0; i < DATA_BUF_SIZE; i++) {
-      for (u32 j = 0; j < ADS0_NUM_GAUGES; j++) {
+      /*for (u32 j = 0; j < ADS0_NUM_GAUGES; j++) {
         averages0[j] += (f32)data_front_buf[i].measures0[j] * ads_conversion;
-      }
+      }*/
 
 
       for (u32 j = 0; j < ADS1_NUM_GAUGES; j++) {
@@ -239,15 +239,15 @@ void loop() {
       }
     }
 
-    Serial.printf("%u,%d,", data_front_buf[0].time, in_flight);
-    Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
-    for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
+    //Serial.printf("%u,%d,", data_front_buf[0].time, in_flight);
+    //Serial.printf("%d,%d,%d", data_front_buf[0].accel.x, data_front_buf[0].accel.y, data_front_buf[0].accel.z);
+    /*for (u32 i = 0; i < ADS0_NUM_GAUGES; i++) {
       averages0[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%6.3f", averages0[i]);
-    }
+      Serial.printf(",AIN%d:%.3f", i+ADS0_GAUGE_OFFSET, averages0[i]);
+    }*/
     for (u32 i = 0; i < ADS1_NUM_GAUGES; i++) {
       averages1[i] /= (f32)DATA_BUF_SIZE;
-      Serial.printf(",%6.3f", averages1[i]);
+      Serial.printf(",%.3f", averages1[i]);
     }
     Serial.println("");
 #endif
@@ -471,9 +471,6 @@ static int accel_read_registers(uint8_t address, uint8_t *data, size_t length);
 static int accel_read_register(uint8_t address);
 static int accel_write_register(uint8_t address, uint8_t value);
 
-bool ads0_good = true;
-bool ads1_good = true;
-
 void setup1() {
   data_front_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
   data_back_buf = (sample*)malloc(sizeof(sample) * DATA_BUF_SIZE);
@@ -506,24 +503,22 @@ void setup1() {
 
   bool devices_working = true;
   
-  digitalWrite(ADS_TRANSISTOR, LOW);
+  /*digitalWrite(ADS_TRANSISTOR, LOW);
   Serial.println("");
   Serial.println("Initializing ADS0");
   if (!ads_init(ADS0_CS_PIN)) {
     Serial.println("ADS0 Failed");
     devices_working = false; 
-    ads0_good = false;
   } else {
     Serial.println("ADS0 Works");
   }
+  digitalWrite(ADS_TRANSISTOR, HIGH);*/
 
-  digitalWrite(ADS_TRANSISTOR, HIGH);
   Serial.println("");
   Serial.println("Initializing ADS1");
   if (!ads_init(ADS1_CS_PIN)) {
     Serial.println("ADS1 Failed");
     devices_working = false; 
-    ads1_good = false;
   } else {
     Serial.println("ADS1 Works");
   }
@@ -546,13 +541,6 @@ void setup1() {
   } else {
     Serial.println("Failed to initialize devices!");
   }
-
-#if TEST_MODE
-  if (!ads0_good && !ads1_good) {
-    while(1);
-  }
-#endif
-
 }
 
 u32 data_buf_pos = 0;
@@ -563,17 +551,17 @@ u8 ads0_cycle = 0;
 u8 ads1_cycle = 0;
 
 void loop1() {
-  u8 ads0_read_pin = ads0_mux_pin;
-  ads0_mux_pin = (ads0_mux_pin + 1) % ADS0_NUM_GAUGES;
+  //u8 ads0_read_pin = ads0_mux_pin;
+  //ads0_mux_pin = (ads0_mux_pin + 1) % ADS0_NUM_GAUGES;
 
   u8 ads1_read_pin = ads1_mux_pin;
   ads1_mux_pin = (ads1_mux_pin + 1) % ADS1_NUM_GAUGES;
 
-  i16 measure0 = 0;
+  //i16 measure0 = 0;
   i16 measure1 = 0;
 
   // ADS0 measure
-  digitalWrite(ADS_TRANSISTOR, LOW);
+  /*digitalWrite(ADS_TRANSISTOR, LOW);
   if (ads0_good) {
     // Wait for DRDY  
     while (digitalRead(ADS0_DRDY_PIN) == HIGH);
@@ -600,9 +588,10 @@ void loop1() {
     SPI1.endTransaction();
   }
 
+  digitalWrite(ADS_TRANSISTOR, HIGH);*/
+
   // ADS1 measure
-  digitalWrite(ADS_TRANSISTOR, HIGH);
-  if (ads1_good) {
+  {
     // Wait for DRDY 
     while (digitalRead(ADS1_DRDY_PIN) == HIGH);
 
@@ -629,10 +618,7 @@ void loop1() {
   }
 
   // Checking for new sample
-  if (
-    ads0_read_pin == 0 && ads1_read_pin == 0 &&
-    ads0_cycle == 0 && ads1_cycle == 0
-  ) {
+  if (ads1_cycle == 0) {
     data_back_buf[data_buf_pos++] = { 0 };
     data_back_buf[data_buf_pos-1].time = micros();
 
@@ -661,21 +647,21 @@ void loop1() {
   }
 
   // Writing measures
-  data_back_buf[data_buf_pos-1].measures0[
-    ads0_cycle * ADS0_NUM_GAUGES + ads0_read_pin
-  ] = measure0;
+  //data_back_buf[data_buf_pos-1].measures0[
+  //  ads0_cycle * ADS0_NUM_GAUGES + ads0_read_pin
+  //] = measure0;
   data_back_buf[data_buf_pos-1].measures1[
     ads1_cycle * ADS1_NUM_GAUGES + ads1_read_pin
   ] = measure1;
 
   // Updating cycles
-  if (ads0_mux_pin == 0) { ads0_cycle++; }
+  //if (ads0_mux_pin == 0) { ads0_cycle++; }
   if (ads1_mux_pin == 0) { ads1_cycle++; }
 
   // Check for buffer swap
   if (
     data_buf_pos >= DATA_BUF_SIZE && 
-    ads0_cycle == ADS0_CYCLES_PER_SAMPLE &&
+    //ads0_cycle == ADS0_CYCLES_PER_SAMPLE &&
     ads1_cycle == ADS1_CYCLES_PER_SAMPLE
   ) {
     tmp_buf = data_front_buf;
@@ -688,7 +674,7 @@ void loop1() {
   }
 
   // Wrapping cycles
-  ads0_cycle %= ADS0_CYCLES_PER_SAMPLE;
+  //ads0_cycle %= ADS0_CYCLES_PER_SAMPLE;
   ads1_cycle %= ADS1_CYCLES_PER_SAMPLE;
 }
 

@@ -13,7 +13,7 @@ typedef float f32;
 
 #define FLASH_CS 5
 
-#define IN_FILE_NAME "pre-comp-tests0000.mes"
+#define IN_FILE_NAME ".mes"
 
 namespace mes {
   enum class types : u8 {
